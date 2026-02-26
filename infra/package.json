@@ -1,0 +1,27 @@
+{
+    "name": "@order-notification/infra",
+    "version": "1.0.0",
+    "private": true,
+    "description": "AWS CDK infrastructure for the order-notification distributed system",
+    "main": "dist/bin/app.js",
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "type-check": "tsc --noEmit",
+        "clean": "rimraf dist cdk.out",
+        "cdk": "cdk",
+        "synth": "cdk synth",
+        "diff": "cdk diff",
+        "deploy:dev": "cdk deploy --all --require-approval never --context env=dev",
+        "deploy:staging": "cdk deploy --all --require-approval broadening --context env=staging",
+        "deploy:prod": "cdk deploy --all --require-approval broadening --context env=prod"
+    },
+    "dependencies": {
+        "aws-cdk-lib": "^2.175.0",
+        "constructs": "^10.0.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0",
+        "aws-cdk": "^2.175.0",
+        "typescript": "^5.7.0"
+    }
+}

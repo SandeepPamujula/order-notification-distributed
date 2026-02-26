@@ -1,0 +1,53 @@
+{
+    "app": "npx ts-node --prefer-ts-exts bin/app.ts",
+    "context": {
+        "@aws-cdk/aws-apigateway:usagePlanKeyOrderInsensitiveId": true,
+        "@aws-cdk/aws-cloudfront:defaultSecurityPolicyTLSv1.2_2021": true,
+        "@aws-cdk/aws-rds:lowercaseDbIdentifier": true,
+        "@aws-cdk/core:stackRelativeExports": true,
+        "@aws-cdk/aws-lambda:recognizeVersionProps": true,
+        "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+        "@aws-cdk/aws-cloudwatch-actions:changeLambdaPermissionLogicalIdForLambdaAction": true,
+        "@aws-cdk/aws-codepipeline-actions:useNewDefaultBranchForCodeCommitSource": false,
+        "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
+        "@aws-cdk/aws-iam:minimizePolicies": true,
+        "dev": {
+            "account": "123456789012",
+            "region": "ap-south-1",
+            "secondaryRegion": "us-east-1",
+            "env": "dev",
+            "owner": "platform-team"
+        },
+        "staging": {
+            "account": "123456789012",
+            "region": "ap-south-1",
+            "secondaryRegion": "us-east-1",
+            "env": "staging",
+            "owner": "platform-team"
+        },
+        "prod": {
+            "account": "123456789012",
+            "region": "ap-south-1",
+            "secondaryRegion": "us-east-1",
+            "env": "prod",
+            "owner": "platform-team"
+        }
+    },
+    "watch": {
+        "include": [
+            "**"
+        ],
+        "exclude": [
+            "README.md",
+            "cdk*.json",
+            "**/*.d.ts",
+            "**/*.js",
+            "tsconfig.json",
+            "package*.json",
+            "yarn.lock",
+            "node_modules",
+            "dist",
+            "test/**"
+        ]
+    }
+}

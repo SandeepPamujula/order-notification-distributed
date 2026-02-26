@@ -1,0 +1,83 @@
+name: CDK Diff — PR Check
+
+on:
+  pull_request:
+    branches:
+      - main
+      - 'release/**'
+    paths:
+      - 'infra/**'
+      - 'src/**'
+      - 'package.json'
+      - 'tsconfig.json'
+
+concurrency:
+  group: cdk-diff-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write      # OIDC token for AWS assume-role
+  contents: read
+  pull-requests: write # Post cdk diff output as PR comment
+
+jobs:
+  cdk-diff:
+    name: CDK Diff (dev)
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type Check
+        run: npm run type-check
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test:ci
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ap-south-1
+
+      - name: CDK Diff (dev — ap-south-1)
+        id: cdk-diff
+        run: |
+          cd infra
+          npx cdk diff --all --context env=dev 2>&1 | tee /tmp/cdk-diff-output.txt
+          echo "diff_output<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/cdk-diff-output.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Comment CDK diff on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const output = `<details>
+            <summary>CDK Diff Output (dev)</summary>
+
+            \`\`\`
+            ${{ steps.cdk-diff.outputs.diff_output }}
+            \`\`\`
+
+            </details>`;
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: output
+            });

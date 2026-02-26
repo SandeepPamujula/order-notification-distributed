@@ -1,0 +1,26 @@
+{
+    "name": "@order-notification/order-service",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Order Service Lambda — accepts, validates, persists and fans-out order events",
+    "main": "dist/handler.js",
+    "scripts": {
+        "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/* --minify",
+        "build:dev": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/*",
+        "type-check": "tsc --noEmit",
+        "clean": "rimraf dist"
+    },
+    "dependencies": {
+        "@aws-lambda-powertools/logger": "^2.0.0",
+        "@aws-lambda-powertools/tracer": "^2.0.0",
+        "@aws-sdk/client-dynamodb": "^3.0.0",
+        "@aws-sdk/client-eventbridge": "^3.0.0",
+        "@aws-sdk/client-sns": "^3.0.0",
+        "@aws-sdk/lib-dynamodb": "^3.0.0",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@types/aws-lambda": "^8.10.0",
+        "aws-sdk-client-mock": "^4.0.0"
+    }
+}

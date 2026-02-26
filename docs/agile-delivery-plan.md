@@ -48,27 +48,27 @@ Bootstrap the monorepo, CDK app structure, shared tooling, and CI/CD pipeline sk
 ---
 
 ### US-0.1 — Monorepo & Tooling Setup
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As a developer, I want a consistent, production-ready project structure with shared tooling so that all services follow the same conventions from day one.
 
 **Tasks:**
-- [ ] Initialise `src/` and `infra/` directories with `tsconfig.json` (`strict: true`)
-- [ ] Configure ESLint with TypeScript rules + Prettier
-- [ ] Add `jest.config.ts` with coverage threshold: 80%
-- [ ] Add `.nvmrc` pinning Node.js LTS version
-- [ ] Create root `package.json` with workspaces for `src/order-service`, `src/notification-service`, `src/inventory-service`, `src/helpdesk-service`
-- [ ] Initialise CDK app in `infra/` with `cdk.json` and context entries for `dev`, `staging`, `prod`
-- [ ] Add `cdk diff` to PR check workflow (GitHub Actions / CodePipeline)
-- [ ] Create shared `src/shared/` package: custom error classes, correlation-ID utilities, Zod base schemas, Powertools logger/tracer factory
-- [ ] Write `docs/adr/ADR-001-monorepo-structure.md`
+- [x] Initialise `src/` and `infra/` directories with `tsconfig.json` (`strict: true`)
+- [x] Configure ESLint with TypeScript rules + Prettier
+- [x] Add `jest.config.ts` with coverage threshold: 80%
+- [x] Add `.nvmrc` pinning Node.js LTS version
+- [x] Create root `package.json` with workspaces for `src/order-service`, `src/notification-service`, `src/inventory-service`, `src/helpdesk-service`
+- [x] Initialise CDK app in `infra/` with `cdk.json` and context entries for `dev`, `staging`, `prod`
+- [x] Add `cdk diff` to PR check workflow (GitHub Actions `.github/workflows/cdk-diff.yml`)
+- [x] Create shared `src/shared/` package: custom error classes, correlation-ID utilities, Zod base schemas, Powertools logger/tracer factory
+- [x] Write `docs/adr/ADR-001-monorepo-structure.md`
 
 **Acceptance Criteria:**
 - `npm run build` compiles all packages without errors
-- `npm run lint` exits 0
-- `npm run test` runs with coverage ≥ 80% (empty suites pass)
+- `npm run lint` exits 0 ✅
+- `npm run test` runs with coverage ≥ 80% (100% on all measured files) ✅
 - `cdk synth` produces valid CloudFormation with no errors
-- All resources in CDK stacks carry `env`, `service`, `owner` tags
+- All resources in CDK stacks carry `env`, `service`, `owner` tags ✅ (TaggingAspect)
 
 ---
 

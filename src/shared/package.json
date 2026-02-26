@@ -1,0 +1,21 @@
+{
+    "name": "@order-notification/shared",
+    "version": "1.0.0",
+    "private": true,
+    "description": "Shared utilities: error classes, correlation-ID helpers, Zod base schemas, Powertools factories",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "scripts": {
+        "build": "tsc -p tsconfig.json",
+        "type-check": "tsc --noEmit",
+        "clean": "rimraf dist"
+    },
+    "dependencies": {
+        "@aws-lambda-powertools/logger": "^2.0.0",
+        "@aws-lambda-powertools/tracer": "^2.0.0",
+        "zod": "^3.23.0"
+    },
+    "devDependencies": {
+        "@types/node": "^22.0.0"
+    }
+}
