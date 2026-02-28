@@ -73,21 +73,21 @@ Bootstrap the monorepo, CDK app structure, shared tooling, and CI/CD pipeline sk
 ---
 
 ### US-0.2 — Shared CDK Constructs
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As a CDK author, I want reusable CDK construct helpers for Lambdas, DLQs, alarms, and tagging so that every service stack is consistent.
 
 **Tasks:**
-- [ ] Create `infra/constructs/PowertoolsLambda.ts` — Lambda with Powertools env vars, X-Ray active tracing, log format JSON
-- [ ] Create `infra/constructs/DeadLetterQueue.ts` — SQS DLQ with CloudWatch alarm on `ApproximateNumberOfMessagesVisible > 0`
-- [ ] Create `infra/constructs/StandardAlarms.ts` — error-rate alarm, throttle alarm, DLQ depth alarm
-- [ ] Create `infra/constructs/TaggingAspect.ts` — CDK Aspect that enforces `env`, `service`, `owner` tags on all resources
-- [ ] Unit-test all constructs with `aws-cdk-lib/assertions`
+- [x] Create `infra/constructs/PowertoolsLambda.ts` — Lambda with Powertools env vars, X-Ray active tracing, log format JSON
+- [x] Create `infra/constructs/DeadLetterQueue.ts` — SQS DLQ with CloudWatch alarm on `ApproximateNumberOfMessagesVisible > 0`
+- [x] Create `infra/constructs/StandardAlarms.ts` — error-rate alarm, throttle alarm, DLQ depth alarm
+- [x] Create `infra/constructs/TaggingAspect.ts` — CDK Aspect that enforces `env`, `service`, `owner` tags on all resources
+- [x] Unit-test all constructs with `aws-cdk-lib/assertions`
 
 **Acceptance Criteria:**
-- CDK assertions tests cover all constructs
-- Every Lambda created via `PowertoolsLambda` automatically has: X-Ray active tracing, structured JSON log format, Powertools env vars
-- Tagging Aspect applied at `App` level tags all synthesised resources
+- CDK assertions tests cover all constructs ✅ (100% statement/function/line coverage on all construct files)
+- Every Lambda created via `PowertoolsLambda` automatically has: X-Ray active tracing, structured JSON log format, Powertools env vars ✅
+- Tagging Aspect applied at `App` level tags all synthesised resources ✅
 
 ---
 
