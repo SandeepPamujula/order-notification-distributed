@@ -36,9 +36,7 @@ const config: Config = {
         '^.+\\.tsx?$': [
             'ts-jest',
             {
-                tsconfig: {
-                    strict: true,
-                },
+                tsconfig: './tsconfig.test.json',
             },
         ],
     },

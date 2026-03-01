@@ -126,8 +126,8 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 **Description:** As a CDK author, I want the `OrderServiceStack` to provision all Phase 1 infrastructure for the Order Service.
 
 **Tasks:**
-- [ ] Create `infra/stacks/OrderServiceStack.ts`
-- [ ] Provision DynamoDB table `Orders` (On-Demand, `NEW_AND_OLD_IMAGES` stream enabled for Phase 2 readiness)
+- [x] Create `infra/stacks/OrderServiceStack.ts`
+- [x] Provision DynamoDB table `Orders` (On-Demand, `NEW_AND_OLD_IMAGES` stream enabled for Phase 2 readiness)
   - PK: `orderId` (String), SK: `createdAt` (String)
   - GSI-1: `GSI-userId-createdAt` (PK: `userId`, SK: `createdAt`)
   - GSI-2: `GSI-country-status` (PK: `country`, SK: `status`)
@@ -135,20 +135,20 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 
   > **Note:** This is a single-region table in M1. Global Table replication is enabled in **US-6.1** (Multi-Region Deployment).
 
-- [ ] Provision SNS topic `order-events-{env}` with SSE enabled
-- [ ] Provision SQS queues `notification-queue` and `inventory-queue` with:
+- [x] Provision SNS topic `order-events-{env}` with SSE enabled
+- [x] Provision SQS queues `notification-queue` and `inventory-queue` with:
   - Visibility timeout: 6× Lambda timeout
   - Receive count: 3, DLQ: `notification-dlq` / `inventory-dlq`
-- [ ] Subscribe SQS queues to SNS topic with raw message delivery enabled (SNS acts as pure fan-out; EventBridge handles filtered routing and transformation)
-- [ ] Provision HTTP API Gateway with `POST /orders` route and Lambda integration
-- [ ] Provision `GET /health` route returning `200 OK` (lightweight route on Order Lambda — no auth, for Route 53 health checks)
-- [ ] Provision Order Lambda (`PowertoolsLambda`) with least-privilege IAM:
+- [x] Subscribe SQS queues to SNS topic with raw message delivery enabled (SNS acts as pure fan-out; EventBridge handles filtered routing and transformation)
+- [x] Provision HTTP API Gateway with `POST /orders` route and Lambda integration
+- [x] Provision `GET /health` route returning `200 OK` (lightweight route on Order Lambda — no auth, for Route 53 health checks)
+- [x] Provision Order Lambda (`PowertoolsLambda`) with least-privilege IAM:
   - `dynamodb:PutItem` on Orders table
   - `sns:Publish` on order-events topic
   - `events:PutEvents` on EventBridge bus
-- [ ] Provision EventBridge custom bus `order-events-bus-{env}`
-- [ ] Store `MESSAGING_MODE` as SSM Parameter (`/order-service/{env}/messaging-mode`, default: `SNS`)
-- [ ] Export cross-stack references via SSM parameters:
+- [x] Provision EventBridge custom bus `order-events-bus-{env}`
+- [x] Store `MESSAGING_MODE` as SSM Parameter (`/order-service/{env}/messaging-mode`, default: `SNS`)
+- [x] Export cross-stack references via SSM parameters:
   - `/order-service/{env}/notification-queue-arn`
   - `/order-service/{env}/notification-dlq-arn`
   - `/order-service/{env}/inventory-queue-arn`
@@ -158,8 +158,8 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
   - `/order-service/{env}/order-events-bus-name`
   - `/order-service/{env}/orders-table-name`
   - `/order-service/{env}/orders-table-stream-arn` (for Phase 2 ESM in US-7.1)
-- [ ] Apply `TaggingAspect` with `service=order-service`
-- [ ] Write `docs/adr/ADR-003-order-service-infrastructure.md`
+- [x] Apply `TaggingAspect` with `service=order-service`
+- [x] Write `docs/adr/ADR-003-order-service-infrastructure.md`
 
 **Acceptance Criteria:**
 - `cdk synth` produces no errors or security warnings
@@ -171,13 +171,13 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 ---
 
 ### US-1.2 — Order Lambda Handler
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 5 | **Status:** [x]
 
 **Description:** As the Order Service, I want to validate the incoming order payload, persist it to DynamoDB, fan-out to SNS and EventBridge, and return a `201 Created` response within 1 second.
 
 **Tasks:**
-- [ ] Create `src/order-service/handler.ts` as the Lambda entry point
-- [ ] Define Zod schema `OrderPayloadSchema`:
+- [x] Create `src/order-service/handler.ts` as the Lambda entry point
+- [x] Define Zod schema `OrderPayloadSchema`:
   ```
   orderId: UUID v4 (auto-generated if absent)
   userId: string (min 1)
@@ -187,15 +187,15 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
   totalAmount: positive number
   items: array of { productId, productName, quantity (≥1), unitPrice (≥0) } (min 1 item)
   ```
-- [ ] Validate request body with Zod; return `400` with structured error on failure
-- [ ] Generate `orderId` (UUID v4) if not provided
-- [ ] Generate `correlationId` (UUID v4), inject into Powertools logger context + response header `X-Correlation-Id`
-- [ ] Write order to DynamoDB with `status: "PLACED"`, `region: process.env.AWS_REGION`, `createdAt`, `updatedAt`
-- [ ] Read `MESSAGING_MODE` from env var; if `SNS`, publish `ORDER_PLACED` event to SNS
-- [ ] Always publish `OrderPlaced` event to EventBridge (both phases)
-- [ ] Return `201 Created` with `{ orderId, status: "PLACED", correlationId }`
-- [ ] Create custom error classes: `ValidationError`, `DatabaseError`, `MessagingError`
-- [ ] Structured error handler middleware: log error + correlation ID, return appropriate HTTP status
+- [x] Validate request body with Zod; return `400` with structured error on failure
+- [x] Generate `orderId` (UUID v4) if not provided
+- [x] Generate `correlationId` (UUID v4), inject into Powertools logger context + response header `X-Correlation-Id`
+- [x] Write order to DynamoDB with `status: "PLACED"`, `region: process.env.AWS_REGION`, `createdAt`, `updatedAt`
+- [x] Read `MESSAGING_MODE` from env var; if `SNS`, publish `ORDER_PLACED` event to SNS
+- [x] Always publish `OrderPlaced` event to EventBridge (both phases)
+- [x] Return `201 Created` with `{ orderId, status: "PLACED", correlationId }`
+- [x] Create custom error classes: `ValidationError`, `DatabaseError`, `MessagingError`
+- [x] Structured error handler middleware: log error + correlation ID, return appropriate HTTP status
 
 **Acceptance Criteria:**
 - `POST /orders` with valid payload returns `201` in < 1 second (measured in integration test)
@@ -209,19 +209,19 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 ---
 
 ### US-1.3 — Order Service Unit Tests
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x]
 
 **Description:** As a QA engineer, I want comprehensive unit tests for the Order Lambda handler so that regressions are caught before deployment.
 
 **Tasks:**
-- [ ] Mock DynamoDB, SNS, and EventBridge clients using `aws-sdk-client-mock`
-- [ ] Test: valid payload → 201 + DynamoDB PutItem called + SNS Publish called + EB PutEvents called
-- [ ] Test: invalid payload (missing required field) → 400
-- [ ] Test: invalid `country` code (e.g. `"INDIA"`) → 400
-- [ ] Test: `MESSAGING_MODE=STREAMS` → SNS Publish NOT called, EB PutEvents still called
-- [ ] Test: DynamoDB failure → 500 with `DatabaseError`
-- [ ] Test: correlation ID propagated to all downstream calls
-- [ ] Achieve ≥ 80% coverage
+- [x] Mock DynamoDB, SNS, and EventBridge clients using `aws-sdk-client-mock`
+- [x] Test: valid payload → 201 + DynamoDB PutItem called + SNS Publish called + EB PutEvents called
+- [x] Test: invalid payload (missing required field) → 400
+- [x] Test: invalid `country` code (e.g. `"INDIA"`) → 400
+- [x] Test: `MESSAGING_MODE=STREAMS` → SNS Publish NOT called, EB PutEvents still called
+- [x] Test: DynamoDB failure → 500 with `DatabaseError`
+- [x] Test: correlation ID propagated to all downstream calls
+- [x] Achieve ≥ 80% coverage
 
 **Acceptance Criteria:**
 - `npm run test` exits 0

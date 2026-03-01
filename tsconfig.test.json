@@ -1,23 +1,22 @@
 {
     "$schema": "https://json.schemastore.org/tsconfig",
-    "extends": "../../tsconfig.json",
+    "extends": "./tsconfig.json",
     "compilerOptions": {
-        "outDir": "dist",
         "baseUrl": ".",
         "paths": {
             "@shared/*": [
-                "../shared/src/*"
+                "./src/shared/src/*"
             ]
         }
     },
     "include": [
         "src/**/*",
-        "../shared/src/**/*"
+        "infra/**/*"
     ],
     "exclude": [
         "node_modules",
         "dist",
-        "**/*.test.ts",
-        "**/*.spec.ts"
+        "cdk.out",
+        "coverage"
     ]
 }

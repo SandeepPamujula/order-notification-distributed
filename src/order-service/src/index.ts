@@ -1,8 +1,9 @@
 /**
  * @module @order-notification/order-service
- * Order Service Lambda handler entry point.
- * Implemented in US-1.2.
+ *
+ * Public exports for the Order Service Lambda.
  */
 
-// Placeholder — handler will be exported from handler.ts (US-1.2)
-export { };
+export { handler } from './handler';
+export { OrderPayloadSchema } from './schemas';
+export type { OrderPayload, OrderRecord, SnsOrderEvent, EventBridgeOrderDetail } from './schemas';
