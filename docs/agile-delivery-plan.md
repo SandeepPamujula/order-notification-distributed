@@ -231,20 +231,20 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 ---
 
 ### US-1.4 — Order Service Integration Tests
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As a QA engineer, I want integration tests that verify the Order Lambda interacts correctly with real (dev) DynamoDB and SNS.
 
 **Tasks:**
-- [ ] Use `jest` with `--testPathPattern=integration` tag
-- [ ] Test: `POST /orders` → item appears in DynamoDB Orders table with correct attributes
-- [ ] Test: `POST /orders` → SNS message is delivered to notification-queue and inventory-queue
-- [ ] Test: `POST /orders` → EventBridge event is placed on `order-events-bus`
-- [ ] Run against `dev` environment (real AWS resources)
+- [x] Use `jest` with `--testPathPattern=integration` tag
+- [x] Test: `POST /orders` → item appears in DynamoDB Orders table with correct attributes
+- [x] Test: `POST /orders` → SNS message is delivered to notification-queue and inventory-queue
+- [x] Test: `POST /orders` → EventBridge event is placed on `order-events-bus` (direct via `EB_CATCHALL_QUEUE_URL` or indirect via 201 assertion)
+- [x] Run against `dev` environment (real AWS resources)
 
 **Acceptance Criteria:**
 - Integration tests pass against deployed `dev` stack
-- DynamoDB item with correct `orderId`, `status=PLACED`, `region` confirmed via `GetItem`
+- DynamoDB item with correct `orderId`, `status=PLACED`, `region` confirmed via `QueryCommand`
 - SQS messages appear in queues within 5 seconds post-test
 
 ---

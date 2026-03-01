@@ -17,9 +17,10 @@
     "lint:fix": "eslint . --ext .ts --fix",
     "format": "prettier --write \"**/*.{ts,json,md}\"",
     "format:check": "prettier --check \"**/*.{ts,json,md}\"",
-    "test": "jest --passWithNoTests",
-    "test:coverage": "jest --coverage --passWithNoTests",
-    "test:ci": "jest --coverage --passWithNoTests --ci",
+    "test": "jest --passWithNoTests --testPathIgnorePatterns=integration",
+    "test:coverage": "jest --coverage --passWithNoTests --testPathIgnorePatterns=integration",
+    "test:ci": "jest --coverage --passWithNoTests --ci --testPathIgnorePatterns=integration",
+    "test:integration": "jest --testPathPattern=integration --passWithNoTests --testTimeout=90000",
     "type-check": "tsc --noEmit -p tsconfig.json",
     "cdk": "cd infra && cdk",
     "cdk:synth": "cd infra && cdk synth",
@@ -27,6 +28,9 @@
     "clean": "npx rimraf dist cdk.out coverage .tsbuildinfo \"src/*/dist\" \"infra/dist\""
   },
   "devDependencies": {
+    "@aws-sdk/client-sqs": "^3.1000.0",
+    "@aws-sdk/client-ssm": "^3.1000.0",
+    "@aws-sdk/util-dynamodb": "^3.996.1",
     "@types/jest": "^29.5.14",
     "@types/node": "^22.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
