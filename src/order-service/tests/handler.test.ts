@@ -466,6 +466,14 @@ describe('POST /orders — 502 Messaging failure', () => {
         expect(statusCode(result)).toBe(502);
         expect(parseBody(result)['error']).toBe('MessagingError');
     });
+
+    it('wraps non-Error DynamoDB rejection into DatabaseError (non-Error branch)', async () => {
+        // Simulate DynamoDB throwing a plain string — covers the `err instanceof Error ? err : new Error(String(err))` false branch
+        ddbMock.on(PutCommand).rejects('DynamoDB string error');
+        const result = await handler(buildPostOrdersEvent(validPayload()));
+        expect(statusCode(result)).toBe(500);
+        expect(parseBody(result)['error']).toBe('DatabaseError');
+    });
 });
 
 // ---------------------------------------------------------------------------

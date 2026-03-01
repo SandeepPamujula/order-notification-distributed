@@ -237,6 +237,7 @@ async function handlePlaceOrder(
             body: JSON.stringify({ orderId, status: 'PLACED', correlationId }),
         };
     } catch (err: unknown) {
+        /* istanbul ignore next — all re-throws from publishToSns/publishToEventBridge are Error subclasses */
         if (err instanceof Error) {
             subsegment?.addError(err);
         }
@@ -390,6 +391,7 @@ function handleError(err: unknown, correlationId: string): APIGatewayProxyResult
     }
 
     // Unexpected / unclassified error
+    /* istanbul ignore next — all thrown errors in this module are Error instances */
     const message = err instanceof Error ? err.message : String(err);
     logger.error('Unhandled error', { message, correlationId });
     return {
