@@ -92,17 +92,19 @@ Bootstrap the monorepo, CDK app structure, shared tooling, and CI/CD pipeline sk
 ---
 
 ### US-0.3 — Shared CDK Stack: Route 53 & Health Checks
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As an operator, I want the `SharedStack` to own the Route 53 hosted zone and health checks so that global routing is managed centrally.
 
 **Tasks:**
-- [ ] Create `infra/stacks/SharedStack.ts` (deployed to `us-east-1` — Route 53 is global, hosted zones must be in `us-east-1`)
-- [ ] Define hosted zone for `api.sporder.com`
-- [ ] Define latency-based routing records pointing to API Gateway endpoints in `ap-south-1` and `us-east-1`
-- [ ] Define Route 53 health checks for both regions (HTTP path: `/health`, failure threshold: 3)
-- [ ] Export hosted zone ARN and health check IDs as SSM parameters for use by regional stacks
-- [ ] Write `docs/adr/ADR-002-global-routing-strategy.md`
+- [x] Create `infra/stacks/SharedStack.ts` (deployed to `us-east-1` — Route 53 is global, hosted zones must be in `us-east-1`)
+- [x] Define hosted zone for `api.sporder.com`
+- [x] Define latency-based routing records pointing to API Gateway endpoints in `ap-south-1` and `us-east-1`
+- [x] Define Route 53 health checks for both regions (HTTP path: `/health`, failure threshold: 3)
+- [x] Export hosted zone ARN and health check IDs as SSM parameters for use by regional stacks
+- [x] Write `docs/adr/ADR-002-global-routing-strategy.md`
+
+> **Note:** In `dev`, Route 53 latency records point to raw `execute-api` URLs (placeholder values until `OrderServiceStack` is deployed). ACM certificates and API Gateway Custom Domain Names for `api.sporder.com` are deferred to **US-6.1** (Multi-Region Deployment).
 
 **Acceptance Criteria:**
 - `cdk diff` for `SharedStack` shows only expected resources
@@ -125,24 +127,37 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 
 **Tasks:**
 - [ ] Create `infra/stacks/OrderServiceStack.ts`
-- [ ] Provision DynamoDB Global Table `Orders` (On-Demand, `NEW_AND_OLD_IMAGES` stream enabled for Phase 2 readiness)
+- [ ] Provision DynamoDB table `Orders` (On-Demand, `NEW_AND_OLD_IMAGES` stream enabled for Phase 2 readiness)
   - PK: `orderId` (String), SK: `createdAt` (String)
   - GSI-1: `GSI-userId-createdAt` (PK: `userId`, SK: `createdAt`)
   - GSI-2: `GSI-country-status` (PK: `country`, SK: `status`)
   - TTL attribute: `ttl`
+
+  > **Note:** This is a single-region table in M1. Global Table replication is enabled in **US-6.1** (Multi-Region Deployment).
+
 - [ ] Provision SNS topic `order-events-{env}` with SSE enabled
 - [ ] Provision SQS queues `notification-queue` and `inventory-queue` with:
   - Visibility timeout: 6× Lambda timeout
   - Receive count: 3, DLQ: `notification-dlq` / `inventory-dlq`
-- [ ] Subscribe SQS queues to SNS topic with raw message delivery disabled (envelope needed for filtering)
+- [ ] Subscribe SQS queues to SNS topic with raw message delivery enabled (SNS acts as pure fan-out; EventBridge handles filtered routing and transformation)
 - [ ] Provision HTTP API Gateway with `POST /orders` route and Lambda integration
-- [ ] Provision `GET /health` route returning `200 OK` (for Route 53 health checks)
+- [ ] Provision `GET /health` route returning `200 OK` (lightweight route on Order Lambda — no auth, for Route 53 health checks)
 - [ ] Provision Order Lambda (`PowertoolsLambda`) with least-privilege IAM:
   - `dynamodb:PutItem` on Orders table
   - `sns:Publish` on order-events topic
   - `events:PutEvents` on EventBridge bus
 - [ ] Provision EventBridge custom bus `order-events-bus-{env}`
 - [ ] Store `MESSAGING_MODE` as SSM Parameter (`/order-service/{env}/messaging-mode`, default: `SNS`)
+- [ ] Export cross-stack references via SSM parameters:
+  - `/order-service/{env}/notification-queue-arn`
+  - `/order-service/{env}/notification-dlq-arn`
+  - `/order-service/{env}/inventory-queue-arn`
+  - `/order-service/{env}/inventory-dlq-arn`
+  - `/order-service/{env}/api-gateway-url` (raw `execute-api` URL for `SharedStack` health checks)
+  - `/order-service/{env}/order-events-topic-arn`
+  - `/order-service/{env}/order-events-bus-name`
+  - `/order-service/{env}/orders-table-name`
+  - `/order-service/{env}/orders-table-stream-arn` (for Phase 2 ESM in US-7.1)
 - [ ] Apply `TaggingAspect` with `service=order-service`
 - [ ] Write `docs/adr/ADR-003-order-service-infrastructure.md`
 
@@ -151,6 +166,7 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 - No wildcard IAM actions or resources
 - All SQS queues have DLQs with CloudWatch alarms
 - SSM parameter `MESSAGING_MODE` is readable by Order Lambda at runtime
+- All cross-stack SSM parameters are created and resolvable
 
 ---
 
@@ -294,14 +310,17 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 
 **Tasks:**
 - [ ] Create `infra/stacks/NotificationServiceStack.ts`
-- [ ] Provision DynamoDB Global Table `Notifications` (On-Demand):
+- [ ] Provision DynamoDB table `Notifications` (On-Demand):
   - PK: `notificationId` (String), SK: `createdAt` (String)
   - GSI-1: `GSI-orderId` (PK: `orderId`, SK: `createdAt`)
   - GSI-2: `GSI-status-type` (PK: `status`, SK: `type`)
   - TTL attribute: `ttl`
-- [ ] Import `notification-queue` from `OrderServiceStack` (cross-stack reference via SSM parameter)
+
+  > **Note:** Single-region table in M2. Global Table replication is enabled in **US-6.1**.
+
+- [ ] Import `notification-queue` and `notification-dlq` from `OrderServiceStack` via SSM parameters (`/order-service/{env}/notification-queue-arn`, `/order-service/{env}/notification-dlq-arn`)
 - [ ] Provision Notification Lambda (`PowertoolsLambda`) as SQS event source (batch size: 10, bisect on error: true)
-- [ ] DLQ: `notification-dlq` (already provisioned in `OrderServiceStack`, import reference)
+- [ ] DLQ: imported `notification-dlq` from `OrderServiceStack`
 - [ ] Lambda IAM (least privilege):
   - `dynamodb:PutItem` on Notifications table
   - `ses:SendEmail` on verified SES identities only
@@ -335,7 +354,7 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
   4. `PutItem` to Notifications table: `notificationId` (UUID), `orderId`, `userId`, `userEmail`, `type=CONFIRMATION`, `status=SENT/FAILED`, `channel=EMAIL`, `subject`, `body`, `sentAt`, `retryCount`
   5. On SES failure: update `status=FAILED`, `errorMessage`, increment `retryCount`; **return `itemIdentifier`** in `batchItemFailures` for SQS partial batch failure
 - [ ] Implement exponential backoff retry (max 3 attempts) for SES errors
-- [ ] Idempotency: check Notifications table for existing `notificationId` before sending email (prevent duplicate sends on SQS redelivery)
+- [ ] Idempotency: check Notifications table GSI-1 (`orderId`) for existing `SENT` confirmation before sending email (prevent duplicate sends on SQS redelivery)
 
 **Acceptance Criteria:**
 - Each processed message results in a DynamoDB notification record with `status=SENT` (or `FAILED`)
@@ -537,12 +556,12 @@ Provision the `ObservabilityStack` with CloudWatch dashboards, alarms, and X-Ray
 ## Milestone 6 — Multi-Region Deployment
 
 ### Goals
-Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Table replication enabled.
+Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Table replication enabled. Provision ACM certificates and API Gateway Custom Domain Names for `api.sporder.com` (deferred from M0).
 
 ---
 
 ### US-6.1 — Multi-Region CDK Deployment
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 8 | **Status:** [ ]
 
 **Tasks:**
 - [ ] Update `infra/bin/app.ts` to instantiate all service stacks for both regions:
@@ -551,16 +570,19 @@ Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Tabl
   new OrderServiceStack(app, 'OrderServiceStack-us-east-1-dev', { env: { region: 'us-east-1' }, ... })
   ```
 - [ ] Configure DynamoDB Global Tables replication: Orders table replicated to both regions; Notifications table replicated to both regions
-- [ ] Deploy `SharedStack` to `us-east-1` (Route 53 is global but must be in us-east-1)
-- [ ] Configure Route 53 latency routing records pointing to API GW endpoints in each region
-- [ ] Configure Route 53 health checks targeting `GET /health` in each region
+- [ ] Provision ACM certificates in each region for `api.sporder.com` (DNS-validated via `SharedStack` hosted zone)
+- [ ] Configure API Gateway Custom Domain Names in each regional `OrderServiceStack`, linked to the ACM certificates
+- [ ] Update `SharedStack` Route 53 latency records: swap placeholder `execute-api` URLs with real custom domain regional endpoints (exported via SSM by `OrderServiceStack`)
 - [ ] Write `docs/adr/ADR-007-multi-region-deployment.md`
+
+> **Note:** `SharedStack` (Route 53 hosted zone, health checks, latency routing) was already deployed in US-0.3. This story updates the latency records from raw `execute-api` URLs to proper custom domain endpoints.
 
 **Acceptance Criteria:**
 - `POST api.sporder.com/orders` from an India-like IP resolves to `ap-south-1`
 - `POST api.sporder.com/orders` from a US-like IP resolves to `us-east-1`
 - Writing an order in `ap-south-1` → item appears in `us-east-1` DynamoDB replica within ~5 seconds
 - Simulating `ap-south-1` health check failure → Route 53 routes to `us-east-1`
+- ACM certificates are valid and attached to API Gateway Custom Domain Names in both regions
 
 ---
 
@@ -626,6 +648,7 @@ Add DynamoDB Streams triggers for Notification and Inventory Lambdas, implement 
 - [ ] Update `src/notification-service/handler.ts` to handle both `SQSEvent` and `DynamoDBStreamEvent`
 - [ ] For `DynamoDBStreamEvent`:
   - Parse `DynamoDBRecord.dynamodb.NewImage` using `@aws-sdk/util-dynamodb` `unmarshall`
+  - Apply application-level filter: explicitly skip and return success if `process.env.MESSAGING_MODE === 'SNS'` to prevent duplicate emails during migration
   - Apply application-level filter: skip if `aws:rep:updateregion` present (belt-and-suspenders)
   - Extract `correlationId` from item; inject into Powertools logger
   - Execute same email send + DynamoDB Notifications PutItem as Phase 1
@@ -737,10 +760,10 @@ Validate the system against target TPS, ensure all operational excellence requir
 | M3 — Inventory Service (Phase 1) | 6 | 🟠 High |
 | M4 — Helpdesk Service | 8 | 🟠 High |
 | M5 — Observability Stack | 5 | 🟠 High |
-| M6 — Multi-Region Deployment | 8 | 🟡 Medium |
+| M6 — Multi-Region Deployment | 11 | 🟡 Medium |
 | M7 — Phase 2 Migration | 12 | 🟡 Medium |
 | M8 — Production Hardening | 10 | 🟡 Medium |
-| **Total** | **97** | |
+| **Total** | **100** | |
 
 ---
 
