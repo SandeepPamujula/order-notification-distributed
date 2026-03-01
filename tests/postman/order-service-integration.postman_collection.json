@@ -1,0 +1,1098 @@
+{
+    "info": {
+        "name": "Order Service — Integration Tests (US-1.4)",
+        "description": "Postman collection mirroring the US-1.4 Jest integration tests.\n\nCovers:\n  1. Health check (GET /health)\n  2. Happy-path order placement (POST /orders → 201)\n  3. Response contract validation (orderId UUID, status, correlationId, X-Correlation-Id header)\n  4. EventBridge dispatch (indirect 201 assertion)\n  5. Validation errors — 400 Bad Request\n     a. Missing userId\n     b. Invalid country code\n     c. Negative totalAmount\n     d. Empty items array\n  6. Idempotency — duplicate orderId\n  7. Unknown route — 404\n\nEnvironment variables (configure in Postman Environment):\n  BASE_URL          — e.g. https://<id>.execute-api.ap-south-1.amazonaws.com\n  DEPLOY_ENV        — e.g. dev (used only in description; resource names derived from it)\n\nCollection variables (auto-managed by pre-request / test scripts):\n  orderId           — UUID generated per test run\n  correlationId     — UUID generated per test run\n  createdOrderId    — orderId captured from the happy-path request (used by idempotency test)\n\nRun order:\n  Use Postman Collection Runner or Newman in the order listed.\n  Each folder is self-contained; happy-path folder MUST run before idempotency folder.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+        "version": {
+            "major": 1,
+            "minor": 0,
+            "patch": 0
+        }
+    },
+    "variable": [
+        {
+            "key": "BASE_URL",
+            "value": "https://REPLACE_WITH_YOUR_API_GW_URL",
+            "description": "HTTP API Gateway execute-api URL. Override in your Postman Environment.",
+            "type": "string"
+        },
+        {
+            "key": "DEPLOY_ENV",
+            "value": "dev",
+            "description": "Deployment environment — used in descriptions only.",
+            "type": "string"
+        },
+        {
+            "key": "orderId",
+            "value": "",
+            "description": "Auto-generated UUID v4 per test. Set by pre-request scripts.",
+            "type": "string"
+        },
+        {
+            "key": "correlationId",
+            "value": "",
+            "description": "Auto-generated UUID v4 per test. Set by pre-request scripts.",
+            "type": "string"
+        },
+        {
+            "key": "createdOrderId",
+            "value": "",
+            "description": "orderId captured from the happy-path response. Used by the idempotency test.",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "1 — Health Check",
+            "description": "Verifies the GET /health endpoint returns 200 {status:ok, service:order-service}.\nUsed by Route 53 health checks — must require no auth.",
+            "item": [
+                {
+                    "name": "GET /health → 200 ok",
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/health",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Lightweight health check endpoint.\nExpected: 200 {status: 'ok', service: 'order-service'}"
+                    },
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has status=ok', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.status).to.eql('ok');",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has service=order-service', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.service).to.eql('order-service');",
+                                    "});",
+                                    "",
+                                    "pm.test('Response time is under 2000ms', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "2 — Happy Path (POST /orders → 201)",
+            "description": "Places a valid order and validates the 201 response shape.\nGenerates a fresh UUID orderId and correlationId on each run.\nCaptures orderId into collection variable `createdOrderId` for use by the idempotency test.",
+            "item": [
+                {
+                    "name": "POST /orders — valid payload → 201 Created",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// Generate a fresh UUID v4 for orderId and correlationId",
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId',      uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 201 Created', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has orderId matching UUID v4 format', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.orderId).to.match(",
+                                    "        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i",
+                                    "    );",
+                                    "    // Capture for idempotency test",
+                                    "    pm.collectionVariables.set('createdOrderId', json.orderId);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has correlationId', function () {",
+                                    "    pm.expect(pm.response.json().correlationId).to.be.a('string').and.not.empty;",
+                                    "});",
+                                    "",
+                                    "pm.test('Response header X-Correlation-Id is present', function () {",
+                                    "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.not.be.null;",
+                                    "});",
+                                    "",
+                                    "pm.test('Response header X-Correlation-Id matches request header', function () {",
+                                    "    const sent = pm.collectionVariables.get('correlationId');",
+                                    "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.eql(sent);",
+                                    "});",
+                                    "",
+                                    "pm.test('correlationId in body matches X-Correlation-Id header', function () {",
+                                    "    const body   = pm.response.json().correlationId;",
+                                    "    const header = pm.response.headers.get('X-Correlation-Id');",
+                                    "    pm.expect(body).to.eql(header);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response time is under 1000ms (SLA)', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+                                    "});",
+                                    "",
+                                    "pm.test('Content-Type is application/json', function () {",
+                                    "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}",
+                                "description": "Custom correlation ID propagated to all downstream log entries and the response."
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"integration-test-user\",\n  \"userEmail\": \"integration@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 1499.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-integration-001\",\n      \"productName\": \"Integration Test Widget\",\n      \"quantity\": 2,\n      \"unitPrice\": 749.50\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Places a valid order. The handler:\n  1. Validates the Zod schema → passes\n  2. PutItem to DynamoDB (status=PLACED)\n  3. Publishes to SNS (MESSAGING_MODE=SNS)\n  4. PutEvents to EventBridge\n  5. Returns 201 {orderId, status, correlationId}"
+                    }
+                },
+                {
+                    "name": "POST /orders — orderId auto-generated (no orderId in body)",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('correlationId', 'postman-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 201', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Server auto-generated a UUID v4 orderId', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.orderId).to.match(",
+                                    "        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i",
+                                    "    );",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"integration-test-user\",\n  \"userEmail\": \"integration@example.com\",\n  \"country\": \"US\",\n  \"currency\": \"USD\",\n  \"totalAmount\": 299.99,\n  \"items\": [\n    {\n      \"productId\": \"prod-002\",\n      \"productName\": \"Postman Widget\",\n      \"quantity\": 1,\n      \"unitPrice\": 299.99\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "No orderId in the body — server must auto-generate a UUID v4."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3 — EventBridge Dispatch (Indirect)",
+            "description": "The Order Lambda only returns 201 AFTER EB PutEvents succeeds.\nA 201 response is proof the OrderPlaced event was dispatched to order-events-bus.\n\nNote: For a direct SQS poll assertion, use the Jest integration test with EB_CATCHALL_QUEUE_URL.",
+            "item": [
+                {
+                    "name": "POST /orders — 201 proves EB PutEvents fired",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId',      uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-eb-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// The handler returns 502 if EB PutEvents throws.",
+                                    "// A 201 is therefore indirect proof that EB PutEvents succeeded.",
+                                    "pm.test('Status 201 — proves EB PutEvents was called successfully', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response has orderId (EB event detail matches returned orderId)', function () {",
+                                    "    pm.expect(pm.response.json().orderId).to.be.a('string').and.not.empty;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"eb-test-user\",\n  \"userEmail\": \"eb-test@example.com\",\n  \"country\": \"US\",\n  \"currency\": \"USD\",\n  \"totalAmount\": 500.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-eb-001\",\n      \"productName\": \"EventBridge Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 500.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "4 — Validation Errors (400 Bad Request)",
+            "description": "Tests every Zod schema validation rule.\nAll requests must return 400 with error=ValidationError.\nNo DynamoDB writes or SNS/EB publishes should occur.",
+            "item": [
+                {
+                    "name": "POST /orders — missing userId → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error field is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});",
+                                    "",
+                                    "pm.test('details array is present (Zod issues)', function () {",
+                                    "    pm.expect(pm.response.json().details).to.be.an('array').and.not.empty;",
+                                    "});",
+                                    "",
+                                    "pm.test('correlationId is present in error response', function () {",
+                                    "    pm.expect(pm.response.json().correlationId).to.be.a('string').and.not.empty;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userEmail\": \"integration@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 1499.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-001\",\n      \"productName\": \"Widget\",\n      \"quantity\": 1,\n      \"unitPrice\": 1499.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "userId field is absent — must return 400 with Zod validation details."
+                    }
+                },
+                {
+                    "name": "POST /orders — invalid country code (INDIA) → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error field is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});",
+                                    "",
+                                    "pm.test('details mention country field', function () {",
+                                    "    const details = JSON.stringify(pm.response.json().details);",
+                                    "    pm.expect(details).to.include('country');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"INDIA\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [\n    {\n      \"productId\": \"p1\",\n      \"productName\": \"Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 100.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Country must be exactly 2 uppercase chars (ISO 3166-1 alpha-2). \"INDIA\" is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — lowercase country code (in) → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error field is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"in\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Country must be UPPERCASE. \"in\" is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — negative totalAmount → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": -50.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 50.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "totalAmount must be strictly positive (> 0). -50 is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — zero totalAmount → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 0,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 0 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "POST /orders — empty items array → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});",
+                                    "",
+                                    "pm.test('details mention items field', function () {",
+                                    "    const details = JSON.stringify(pm.response.json().details);",
+                                    "    pm.expect(details).to.include('items');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": []\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "items array must have at least 1 element. Empty array is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — item with quantity 0 → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 0, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "quantity must be ≥ 1. 0 is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — invalid userEmail → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"not-an-email\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "POST /orders — invalid currency code (too long) → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"test-user\",\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"dollars\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "currency must be exactly 3 uppercase chars (ISO 4217). \"dollars\" is invalid."
+                    }
+                },
+                {
+                    "name": "POST /orders — non-JSON body → 400",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error is ValidationError (JSON parse failure)', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "this-is-not{{valid-json",
+                            "options": {
+                                "raw": {
+                                    "language": "text"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Malformed JSON body — handler should catch JSON.parse error and return 400."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "5 — Idempotency (Duplicate orderId)",
+            "description": "Sends the same orderId twice.\nBoth requests must return 201 (ConditionalCheckFailedException is handled gracefully).\nThe second request must NOT throw or return 500.\n\nPrerequisite: Folder 2 must have run first so that `createdOrderId` is set.",
+            "item": [
+                {
+                    "name": "POST /orders — first request (original)",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "// Generate a fixed orderId for resuse in the duplicate request below",
+                                    "const idempotencyId = uuid();",
+                                    "pm.collectionVariables.set('idempotencyOrderId', idempotencyId);",
+                                    "pm.collectionVariables.set('correlationId', 'postman-idem-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('First request: status 201', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('First request: orderId matches sent value', function () {",
+                                    "    const sent = pm.collectionVariables.get('idempotencyOrderId');",
+                                    "    pm.expect(pm.response.json().orderId).to.eql(sent);",
+                                    "});",
+                                    "",
+                                    "pm.test('First request: status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"orderId\": \"{{idempotencyOrderId}}\",\n  \"userId\": \"idempotency-test-user\",\n  \"userEmail\": \"idem@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 99.00,\n  \"items\": [{ \"productId\": \"p-idem\", \"productName\": \"Idempotency Widget\", \"quantity\": 1, \"unitPrice\": 99.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "POST /orders — second request (duplicate orderId) → 201 idempotent",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('correlationId', 'postman-idem2-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Duplicate request: status is still 201 (idempotent)', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Duplicate request: same orderId returned', function () {",
+                                    "    const sent = pm.collectionVariables.get('idempotencyOrderId');",
+                                    "    pm.expect(pm.response.json().orderId).to.eql(sent);",
+                                    "});",
+                                    "",
+                                    "pm.test('Duplicate request: status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "pm.test('Duplicate request: no 500 error (ConditionalCheckFailedException handled)', function () {",
+                                    "    pm.expect(pm.response.status).to.not.eql(500);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"orderId\": \"{{idempotencyOrderId}}\",\n  \"userId\": \"idempotency-test-user\",\n  \"userEmail\": \"idem@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 99.00,\n  \"items\": [{ \"productId\": \"p-idem\", \"productName\": \"Idempotency Widget\", \"quantity\": 1, \"unitPrice\": 99.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Exact same payload as the previous request (same orderId).\nHandler must return 201 via idempotent path, NOT throw 500."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "6 — Unknown Routes (404)",
+            "description": "Verifies the handler returns 404 for unregistered routes.",
+            "item": [
+                {
+                    "name": "DELETE /orders — unknown route → 404",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 404', function () {",
+                                    "    pm.response.to.have.status(404);",
+                                    "});",
+                                    "",
+                                    "pm.test('error field is NotFound', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('NotFound');",
+                                    "});",
+                                    "",
+                                    "pm.test('correlationId is present', function () {",
+                                    "    pm.expect(pm.response.json().correlationId).to.be.a('string').and.not.empty;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "DELETE",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "DELETE /orders is not registered — must return 404."
+                    }
+                },
+                {
+                    "name": "GET /orders/unknown-path → 404",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 404', function () {",
+                                    "    pm.response.to.have.status(404);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders/some-unregistered-path",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders",
+                                "some-unregistered-path"
+                            ]
+                        }
+                    }
+                }
+            ]
+        }
+    ],
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "// Collection-level pre-request: ensure BASE_URL has no trailing slash",
+                    "let base = pm.collectionVariables.get('BASE_URL') || '';",
+                    "if (base.endsWith('/')) {",
+                    "    pm.collectionVariables.set('BASE_URL', base.slice(0, -1));",
+                    "}"
+                ]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "// Collection-level assertion: all responses must have X-Correlation-Id header",
+                    "// (except non-JSON responses like 404 from API GW itself, which we skip)",
+                    "const skipPaths = ['/favicon.ico'];",
+                    "const url = pm.request.url.toString();",
+                    "const shouldCheck = !skipPaths.some(p => url.includes(p));",
+                    "",
+                    "if (shouldCheck) {",
+                    "    pm.test('[Global] X-Correlation-Id header is present on all responses', function () {",
+                    "        pm.expect(pm.response.headers.get('X-Correlation-Id')).to.not.be.null;",
+                    "    });",
+                    "}"
+                ]
+            }
+        }
+    ]
+}

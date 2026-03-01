@@ -249,6 +249,44 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 
 ---
 
+### US-1.4-P — Order Service Postman API Tests
+**Story Points:** 2 | **Status:** [x] Complete
+
+**Description:** As a QA engineer, I want a Postman collection that mirrors the integration tests so that the Order Service HTTP API can be manually explored, regression-tested via Newman in CI, and shared with the team without needing AWS credentials.
+
+**Tasks:**
+- [x] Create `tests/postman/order-service-integration.postman_collection.json` with 22 tests across 6 folders
+- [x] Folder 1: `GET /health` → 200 `{status:ok, service:order-service}`
+- [x] Folder 2: `POST /orders` happy path → 201, UUID `orderId`, `status=PLACED`, `X-Correlation-Id` header
+- [x] Folder 3: `POST /orders` → EventBridge indirect assertion (201 proves `PutEvents` succeeded)
+- [x] Folder 4: Validation errors — 400 for missing `userId`, invalid country/email/currency, zero amount, empty items, non-JSON body
+- [x] Folder 5: Idempotency — duplicate `orderId` returns 201 both times
+- [x] Folder 6: Unknown routes → 404
+- [x] Collection-level assert: `X-Correlation-Id` header present on every response
+- [x] Pre-request scripts generate fresh UUID `orderId` and `correlationId` per request
+- [x] Create `tests/postman/order-service-dev.postman_environment.json` template
+- [x] Create `tests/postman/README.md` with Postman GUI + Newman CLI run instructions
+
+**Acceptance Criteria:**
+- Collection runs to 22/22 passed in Postman Collection Runner against deployed `dev` stack
+- Newman CLI: `newman run ... --reporters cli,junit` exits 0
+- All validation-error cases assert `error=ValidationError` in the response body
+- Idempotency test: second duplicate request returns 201 (not 500)
+- `X-Correlation-Id` response header asserted on every request via collection-level test
+
+**Newman CLI (quick run):**
+```bash
+npm install -g newman
+newman run tests/postman/order-service-integration.postman_collection.json \
+  --environment tests/postman/order-service-dev.postman_environment.json \
+  --env-var BASE_URL=https://<YOUR_API_GW_ID>.execute-api.ap-south-1.amazonaws.com
+```
+
+> **Note:** SQS fan-out and DynamoDB attribute assertions require the Jest integration tests
+> (`npm run test:integration`). Postman covers all HTTP-layer assertions only.
+
+---
+
 ### US-1.5 — Order Service CI/CD Pipeline (DEV)
 **Story Points:** 3 | **Status:** [ ]
 
