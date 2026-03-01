@@ -4,6 +4,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 
 import { BaselineStack } from '../stacks/BaselineStack';
+import { OrderServiceStack } from '../stacks/OrderServiceStack';
 import { SharedStack } from '../stacks/SharedStack';
 
 // ---------------------------------------------------------------------------
@@ -89,6 +90,27 @@ new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
         `placeholder-secondary.execute-api.us-east-1.amazonaws.com`,
     owner: envConfig.owner,
     description: `Route 53 hosted zone, health checks, and latency routing — ${envConfig.env}`,
+});
+
+// ---------------------------------------------------------------------------
+// Order Service Stack (primary region — ap-south-1)
+//
+// Phase 1: DynamoDB Orders table, SNS fan-out, SQS queues, HTTP API Gateway,
+//          EventBridge custom bus, Order Lambda.
+//
+// NOTE: The secondary region (us-east-1) OrderServiceStack is added in US-6.1
+//       (Multi-Region Deployment) along with DynamoDB Global Table replication.
+// ---------------------------------------------------------------------------
+new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
+    env: primaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Order Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
+    // Reserved concurrency is left undefined for dev; set via CDK context for staging/prod.
+    // Example: --context orderLambdaReservedConcurrency=2000
+    ...(app.node.tryGetContext('orderLambdaReservedConcurrency') !== undefined && {
+        orderLambdaReservedConcurrency: Number(app.node.tryGetContext('orderLambdaReservedConcurrency')),
+    }),
 });
 
 app.synth();

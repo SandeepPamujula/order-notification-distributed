@@ -121,7 +121,7 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
 ---
 
 ### US-1.1 — CDK Stack: Order Service Infrastructure (Phase 1)
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 5 | **Status:** [x] Complete
 
 **Description:** As a CDK author, I want the `OrderServiceStack` to provision all Phase 1 infrastructure for the Order Service.
 
