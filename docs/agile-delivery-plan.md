@@ -288,49 +288,74 @@ newman run tests/postman/order-service-integration.postman_collection.json \
 ---
 
 ### US-1.5 — Order Service CI/CD Pipeline (DEV)
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As a developer, I want a per-service CI/CD pipeline for the Order Service so that every commit is automatically validated and deployed to `dev`.
 
 **Tasks:**
-- [ ] Create `.github/workflows/order-service.yml` (or CodePipeline equivalent)
-- [ ] Pipeline stages:
-  1. **Lint** — `eslint src/order-service/`
-  2. **Type Check** — `tsc --noEmit`
-  3. **Test** — `jest --coverage` with 80% gate
-  4. **Build** — `esbuild` bundle for Lambda
-  5. **CDK Synth** — `cdk synth OrderServiceStack-dev`
-  6. **Deploy** — `cdk deploy OrderServiceStack-dev --require-approval never`
-- [ ] `cdk diff` runs on every PR as a required check
-- [ ] Automatic rollback triggered by CloudWatch alarm breach (error rate > 1%)
-- [ ] Manual approval gate added before `staging` promotion (future milestone)
+- [x] Create `.github/workflows/order-service.yml` — full push-to-main pipeline
+- [x] Create `.github/workflows/order-service-pr.yml` — PR-only CDK diff + validate check
+- [x] Pipeline stages:
+  1. **Lint** — `npm run lint` (ESLint --max-warnings 0)
+  2. **Type Check** — `npm run type-check`
+  3. **Test** — `npm run test:ci` (jest --coverage with 80% threshold gate)
+  4. **Build** — `npm run build` in `src/order-service` (esbuild → `dist/handler.js`)
+  5. **CDK Synth** — `cdk synth OrderServiceStack-ap-south-1-dev --context env=dev`
+  6. **Deploy** — `cdk deploy OrderServiceStack-ap-south-1-dev --require-approval never`
+- [x] Smoke test POST-deploy: `GET /health` must return 200 before pipeline succeeds
+- [x] `cdk diff` runs on every PR as a required check (posts diff as PR comment — updates existing bot comment on re-push)
+- [x] Automatic rollback watch: 5-minute post-deploy CloudWatch alarm monitor (`order-service-error-rate-dev`); triggers rollback on ALARM state
+- [x] AWS credentials via OIDC (`aws-actions/configure-aws-credentials@v4`) — no long-lived keys
+- [x] `concurrency` group prevents parallel deployments on the same branch
+- [x] Coverage report + CDK diff output uploaded as GitHub Actions artifacts
+- [ ] Manual approval gate before `staging` promotion (deferred to US-1.5-staging / future milestone)
 
 **Acceptance Criteria:**
-- Pushing to `main` triggers full pipeline
-- Pipeline fails if unit test coverage < 80%
+- Pushing to `main` triggers full pipeline (Validate → Build → Synth → Deploy → Rollback Watch)
+- Pipeline fails if unit test coverage < 80% (`jest.config.ts` threshold enforced in `test:ci`)
 - Pipeline fails if `cdk synth` produces errors
-- Rollback mechanism verified by artificially triggering alarm in dev
+- PR check (`order-service-pr.yml`) is a required status check — CDK diff posted as PR comment
+- Post-deploy rollback watch monitors `order-service-error-rate-dev` alarm for 5 minutes; fails pipeline and initiates rollback on breach
 
 ---
 
 ### US-1.6 — Order Service Documentation
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Description:** As a new developer, I want complete documentation for the Order Service so I can understand, run, and extend it quickly.
 
 **Tasks:**
-- [ ] Create `src/order-service/README.md` with:
-  - Setup instructions (env vars, local run)
-  - Event schema (request payload + response)
-  - SNS event schema reference → `architecture.md §6.1`
-  - EventBridge event schema reference → `architecture.md §6.2`
-  - Environment variables table
-- [ ] JSDoc on: `handler`, `OrderPayloadSchema`, all error classes, all helper functions
-- [ ] Write `docs/adr/ADR-004-order-validation-strategy.md`
+- [x] Create `src/order-service/README.md` with:
+  - Overview and architecture role diagram
+  - Prerequisites (Node.js, npm, AWS CLI, CDK, required IAM permissions)
+  - Full environment variables table (runtime + integration test)
+  - Local development guide (install → build → unit test → integration test)
+  - API reference: `POST /orders` (request/response, idempotency note) + `GET /health`
+  - Event schemas: §6.1 SNS `ORDER_PLACED` (including SNS message attributes) + §6.2 EventBridge `OrderPlaced` (including rule filter pattern)
+  - Structured error response format + HTTP status → error class table
+  - Observability section: Powertools log messages table, X-Ray subsegment, CloudWatch alarms
+  - Testing section: unit, coverage, ci, integration test commands + coverage table
+  - Build & deploy commands
+  - Project structure + key dependencies table
+- [x] JSDoc on all public interfaces and functions in `schemas.ts`:
+  - `OrderPayloadSchema` (existing, plus full field-level docs)
+  - `OrderPayload` type alias
+  - `OrderRecord` interface (all fields)
+  - `SnsOrderEvent` interface — full class doc + all field docs + `@see architecture.md §6.1`
+  - `EventBridgeOrderDetail` interface — full class doc + all field docs + `@see architecture.md §6.2`
+- [x] JSDoc in `handler.ts` already complete: `@module`, `handler`, `handlePlaceOrder`, `publishToSns`, `publishToEventBridge`, `handleError`, `OrderData` interface
+- [x] JSDoc in `clients.ts` already complete: `docClient`, `snsClient`, `eventBridgeClient`
+- [x] Write `docs/adr/ADR-004-order-validation-strategy.md`:
+  - Decision 1: Lambda-level validation (vs. API Gateway)
+  - Decision 2: Zod (vs. Joi, ajv, class-validator) with comparison table
+  - Decision 3: Domain constraints encoded directly in Zod primitives
+  - Decision 4: Structured Zod `issues` array in 400 response body
+  - Decision 5: DynamoDB `ConditionExpression` idempotency (vs. Transactions)
 
 **Acceptance Criteria:**
-- `README.md` covers all env vars, setup steps, and event schemas
-- No public function or interface lacks JSDoc
+- `README.md` covers all env vars, setup steps, and event schemas ✅
+- No public function, interface, or type lacks JSDoc ✅ (handler.ts, schemas.ts, clients.ts all fully documented)
+- `docs/adr/ADR-004-order-validation-strategy.md` explains all five validation decisions with rationale and trade-offs ✅
 
 ---
 

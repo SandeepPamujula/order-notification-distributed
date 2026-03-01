@@ -65,15 +65,31 @@ export interface OrderRecord extends OrderPayload {
 // SNS event payload schema (§6.1 of architecture.md)
 // ---------------------------------------------------------------------------
 
-/** SNS ORDER_PLACED event envelope published by the Order Lambda. */
+/**
+ * SNS ORDER_PLACED event envelope published by the Order Lambda.
+ *
+ * Published to the `order-events-{env}` SNS topic when `MESSAGING_MODE=SNS`.
+ * Delivered to `notification-queue` and `inventory-queue` via raw SQS subscriptions
+ * (no SNS envelope wrapper — consumers receive this object directly as the SQS `body`).
+ *
+ * @see architecture.md §6.1
+ */
 export interface SnsOrderEvent {
+    /** Unique event identifier (UUID v4). */
     eventId: string;
+    /** Always `"ORDER_PLACED"`. Used for SNS subscription filter policies. */
     eventType: 'ORDER_PLACED';
+    /** ISO 8601 timestamp of when the order was written to DynamoDB. */
     timestamp: string;
+    /** Always `"order-service"`. Identifies the publishing service. */
     source: 'order-service';
+    /** AWS region where the order was placed (e.g. `"ap-south-1"`). */
     region: string;
+    /** Correlation ID propagated from the originating HTTP request. */
     correlationId: string;
+    /** Full order payload plus the resolved `status`. */
     data: OrderPayload & {
+        /** Always `"PLACED"` at the time of initial fan-out. */
         status: 'PLACED';
     };
 }
@@ -82,13 +98,32 @@ export interface SnsOrderEvent {
 // EventBridge event detail shape (§6.2 of architecture.md)
 // ---------------------------------------------------------------------------
 
-/** EventBridge `OrderPlaced` event detail published by the Order Lambda. */
+/**
+ * EventBridge `OrderPlaced` event detail published by the Order Lambda.
+ *
+ * Published to `order-events-bus-{env}` on **every** order (Phase 1 and Phase 2).
+ * The Helpdesk Lambda subscribes via an EventBridge rule that matches
+ * `detail.country` with `anything-but: "IN"`.
+ *
+ * Event metadata (set by the Lambda):
+ *  - `Source`:     `"order-service"`
+ *  - `DetailType`: `"OrderPlaced"`
+ *
+ * @see architecture.md §6.2
+ */
 export interface EventBridgeOrderDetail {
+    /** Order identifier (UUID v4). */
     orderId: string;
+    /** User identifier who placed the order. */
     userId: string;
+    /** User email address for Helpdesk notifications. */
     userEmail: string;
+    /** Shipping destination country (ISO 3166-1 alpha-2). Used by Helpdesk EB rule filter. */
     country: string;
+    /** Total order amount (strictly positive). */
     totalAmount: number;
+    /** Payment currency (ISO 4217, e.g. `"INR"`, `"USD"`). */
     currency: string;
+    /** Correlation ID propagated from the originating HTTP request. */
     correlationId: string;
 }
