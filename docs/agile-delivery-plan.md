@@ -367,13 +367,13 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 ---
 
 ### US-2.1 — CDK Stack: Notification Service Infrastructure (Phase 1)
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 5 | **Status:** [x] Complete
 
 **Description:** As a CDK author, I want the `NotificationServiceStack` to provision the Notification Lambda, Notifications DynamoDB Global Table, and SES configuration for Phase 1.
 
 **Tasks:**
-- [ ] Create `infra/stacks/NotificationServiceStack.ts`
-- [ ] Provision DynamoDB table `Notifications` (On-Demand):
+- [x] Create `infra/stacks/NotificationServiceStack.ts`
+- [x] Provision DynamoDB table `Notifications` (On-Demand):
   - PK: `notificationId` (String), SK: `createdAt` (String)
   - GSI-1: `GSI-orderId` (PK: `orderId`, SK: `createdAt`)
   - GSI-2: `GSI-status-type` (PK: `status`, SK: `type`)
@@ -381,17 +381,17 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 
   > **Note:** Single-region table in M2. Global Table replication is enabled in **US-6.1**.
 
-- [ ] Import `notification-queue` and `notification-dlq` from `OrderServiceStack` via SSM parameters (`/order-service/{env}/notification-queue-arn`, `/order-service/{env}/notification-dlq-arn`)
-- [ ] Provision Notification Lambda (`PowertoolsLambda`) as SQS event source (batch size: 10, bisect on error: true)
-- [ ] DLQ: imported `notification-dlq` from `OrderServiceStack`
-- [ ] Lambda IAM (least privilege):
+- [x] Import `notification-queue` and `notification-dlq` from `OrderServiceStack` via SSM parameters (`/order-service/{env}/notification-queue-arn`, `/order-service/{env}/notification-dlq-arn`)
+- [x] Provision Notification Lambda (`PowertoolsLambda`) as SQS event source (batch size: 10, bisect on error: true)
+- [x] DLQ: imported `notification-dlq` from `OrderServiceStack`
+- [x] Lambda IAM (least privilege):
   - `dynamodb:PutItem` on Notifications table
   - `ses:SendEmail` on verified SES identities only
   - `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` on notification-queue
-- [ ] Store SES configuration in SSM:
+- [x] Store SES configuration in SSM:
   - `/notification-service/{env}/ses-from-address`
   - `/notification-service/{env}/ses-reply-to-address`
-- [ ] Apply `TaggingAspect` with `service=notification-service`
+- [x] Apply `TaggingAspect` with `service=notification-service`
 
 **Acceptance Criteria:**
 - No wildcard IAM permissions
@@ -401,14 +401,14 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 ---
 
 ### US-2.2 — Notification Lambda Handler
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 5 | **Status:** [x] Complete
 
 **Description:** As the Notification Service, I want to process SQS messages, log order details, send a confirmation email to the user, and persist a notification record to DynamoDB.
 
 **Tasks:**
-- [ ] Create `src/notification-service/handler.ts`
-- [ ] Define Zod schema for SNS → SQS message envelope (parse `Records[].body` → SNS envelope → `data` field)
-- [ ] For each SQS record:
+- [x] Create `src/notification-service/handler.ts`
+- [x] Define Zod schema for SNS → SQS message envelope (parse `Records[].body` → SNS envelope → `data` field)
+- [x] For each SQS record:
   1. Extract `correlationId` from event; inject into Powertools logger
   2. Log order details (structured JSON)
   3. Send confirmation email via SES (to `userEmail`):
@@ -416,8 +416,8 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
      - Body: plain text with orderId, items, totalAmount, currency
   4. `PutItem` to Notifications table: `notificationId` (UUID), `orderId`, `userId`, `userEmail`, `type=CONFIRMATION`, `status=SENT/FAILED`, `channel=EMAIL`, `subject`, `body`, `sentAt`, `retryCount`
   5. On SES failure: update `status=FAILED`, `errorMessage`, increment `retryCount`; **return `itemIdentifier`** in `batchItemFailures` for SQS partial batch failure
-- [ ] Implement exponential backoff retry (max 3 attempts) for SES errors
-- [ ] Idempotency: check Notifications table GSI-1 (`orderId`) for existing `SENT` confirmation before sending email (prevent duplicate sends on SQS redelivery)
+- [x] Implement exponential backoff retry (max 3 attempts) for SES errors
+- [x] Idempotency: check Notifications table GSI-1 (`orderId`) for existing `SENT` confirmation before sending email (prevent duplicate sends on SQS redelivery)
 
 **Acceptance Criteria:**
 - Each processed message results in a DynamoDB notification record with `status=SENT` (or `FAILED`)

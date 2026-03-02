@@ -4,6 +4,7 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 
 import { BaselineStack } from '../stacks/BaselineStack';
+import { NotificationServiceStack } from '../stacks/NotificationServiceStack';
 import { OrderServiceStack } from '../stacks/OrderServiceStack';
 import { SharedStack } from '../stacks/SharedStack';
 
@@ -111,6 +112,16 @@ new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
     ...(app.node.tryGetContext('orderLambdaReservedConcurrency') !== undefined && {
         orderLambdaReservedConcurrency: Number(app.node.tryGetContext('orderLambdaReservedConcurrency')),
     }),
+});
+
+// ---------------------------------------------------------------------------
+// Notification Service Stack (primary region)
+// ---------------------------------------------------------------------------
+new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-${envName}`, {
+    env: primaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Notification Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
 
 app.synth();

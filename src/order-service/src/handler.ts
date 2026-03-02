@@ -24,6 +24,7 @@ import { randomUUID } from 'crypto';
 
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 
+import { ConditionalCheckFailedException } from '@aws-sdk/client-dynamodb';
 import { PutCommand } from '@aws-sdk/lib-dynamodb';
 import { PublishCommand } from '@aws-sdk/client-sns';
 import { PutEventsCommand } from '@aws-sdk/client-eventbridge';
@@ -197,8 +198,7 @@ async function handlePlaceOrder(
             logger.info('Order persisted to DynamoDB', { orderId });
         } catch (err: unknown) {
             // ConditionalCheckFailedException → duplicate orderId — return 201 idempotently.
-            const awsErr = err as { name?: string };
-            if (awsErr.name === 'ConditionalCheckFailedException') {
+            if (err instanceof ConditionalCheckFailedException) {
                 logger.warn('Duplicate orderId detected — returning idempotent 201', { orderId });
                 return {
                     statusCode: 201,
