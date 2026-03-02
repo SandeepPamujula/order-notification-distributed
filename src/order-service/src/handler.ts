@@ -75,7 +75,9 @@ export const handler = async (
 ): Promise<APIGatewayProxyResultV2> => {
     const correlationId = extractOrGenerateCorrelationId(event.headers);
 
-    // Inject correlationId into all subsequent log entries for this invocation
+    // Reset any keys appended by a previous warm invocation, then inject the
+    // new correlationId so it appears on every log line for this request.
+    logger.resetKeys();
     logger.appendKeys({ correlationId });
 
     const { requestContext } = event;

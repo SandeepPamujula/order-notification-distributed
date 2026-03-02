@@ -393,5 +393,11 @@ export class OrderServiceStack extends cdk.Stack {
             description: 'EventBridge custom bus name',
             exportName: `OrderServiceStack-${envName}-OrderEventsBusName`,
         });
+
+        new cdk.CfnOutput(this, 'OrderLambdaFunctionName', {
+            value: this.orderLambda.functionName,
+            description: 'Order Lambda function name',
+            exportName: `OrderServiceStack-${envName}-OrderLambdaFunctionName`,
+        });
     }
 }

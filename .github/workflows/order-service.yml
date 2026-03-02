@@ -342,14 +342,13 @@ jobs:
       - name: Rollback Lambda to previous version
         if: steps.alarm-watch.outputs.alarm_breached == 'true'
         run: |
-          # Resolve Order Lambda function name from SSM (set by OrderServiceStack)
-          FUNCTION_NAME=$(aws ssm get-parameter \
-            --name "/order-service/dev/orders-table-name" \
-            --query "Parameter.Value" \
-            --output text | sed 's/orders-/order-service-lambda-/')
+          # Resolve Order Lambda function name from CDK outputs
+          FUNCTION_NAME=$(jq -r '."${{ env.CDK_STACK_NAME }}".OrderLambdaFunctionName' /tmp/cdk-outputs.json)
 
-          # Fallback: derive from known naming convention
-          FUNCTION_NAME="OrderServiceStack-ap-south-1-dev-OrderLambda"
+          if [ -z "${FUNCTION_NAME}" ] || [ "${FUNCTION_NAME}" = "null" ]; then
+            echo "❌ Failed to resolve Lambda function name from CDK outputs."
+            exit 1
+          fi
 
           echo "🔄 Fetching last two published versions for ${FUNCTION_NAME}..."
 
