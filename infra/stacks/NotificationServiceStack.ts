@@ -129,5 +129,14 @@ export class NotificationServiceStack extends cdk.Stack {
         cdk.Aspects.of(this).add(
             new TaggingAspect({ env: envName, service: 'notification-service', owner }),
         );
+
+        // -----------------------------------------------------------------------
+        // 6. CloudFormation outputs
+        // -----------------------------------------------------------------------
+        new cdk.CfnOutput(this, 'NotificationLambdaFunctionName', {
+            value: this.notificationLambda.functionName,
+            description: 'Notification Lambda function name',
+            exportName: `NotificationServiceStack-${envName}-NotificationLambdaFunctionName`,
+        });
     }
 }

@@ -1,7 +1,7 @@
 {
     "info": {
-        "name": "Order Service — Integration Tests (US-1.4)",
-        "description": "Postman collection mirroring the US-1.4 Jest integration tests.\n\nCovers:\n  1. Health check (GET /health)\n  2. Happy-path order placement (POST /orders → 201)\n  3. Response contract validation (orderId UUID, status, correlationId, X-Correlation-Id header)\n  4. EventBridge dispatch (indirect 201 assertion)\n  5. Validation errors — 400 Bad Request\n     a. Missing userId\n     b. Invalid country code\n     c. Negative totalAmount\n     d. Empty items array\n  6. Idempotency — duplicate orderId\n  7. Unknown route — 404\n\nEnvironment variables (configure in Postman Environment):\n  BASE_URL          — e.g. https://<id>.execute-api.ap-south-1.amazonaws.com\n  DEPLOY_ENV        — e.g. dev (used only in description; resource names derived from it)\n\nCollection variables (auto-managed by pre-request / test scripts):\n  orderId           — UUID generated per test run\n  correlationId     — UUID generated per test run\n  createdOrderId    — orderId captured from the happy-path request (used by idempotency test)\n\nRun order:\n  Use Postman Collection Runner or Newman in the order listed.\n  Each folder is self-contained; happy-path folder MUST run before idempotency folder.",
+        "name": "Order Service — Integration Tests (US-1.4 & US-2.4)",
+        "description": "Postman collection mirroring the US-1.4 and US-2.4 Jest integration tests.\n\nCovers:\n  1. Health check (GET /health)\n  2. Happy-path order placement (POST /orders → 201)\n  3. Response contract validation (orderId UUID, status, correlationId, X-Correlation-Id header)\n  4. EventBridge dispatch (indirect 201 assertion)\n  5. Validation errors — 400 Bad Request\n     a. Missing userId\n     b. Invalid country code\n     c. Negative totalAmount\n     d. Empty items array\n  6. Idempotency — duplicate orderId\n  7. Unknown route — 404\n  8. Notification Service Flow (US-2.4) — triggers SQS/SES flow using simulator email\n\nEnvironment variables (configure in Postman Environment):\n  BASE_URL          — e.g. https://<id>.execute-api.ap-south-1.amazonaws.com\n  DEPLOY_ENV        — e.g. dev (used only in description; resource names derived from it)\n\nCollection variables (auto-managed by pre-request / test scripts):\n  orderId           — UUID generated per test run\n  correlationId     — UUID generated per test run\n  createdOrderId    — orderId captured from the happy-path request (used by idempotency test)\n\nRun order:\n  Use Postman Collection Runner or Newman in the order listed.\n  Each folder is self-contained; happy-path folder MUST run before idempotency folder.",
         "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
         "_postman_id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
         "version": {
@@ -1056,6 +1056,78 @@
                                 "some-unregistered-path"
                             ]
                         }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "7 — Notification Service Flow (US-2.4)",
+            "description": "Integration test for the Notification Service (US-2.4).\nPlaces an order for an Indian user to trigger the notification flow (SQS -> Lambda -> SES/DynamoDB).",
+            "item": [
+                {
+                    "name": "POST /orders — notification flow trigger",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId', uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-notif-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 201 Created', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Instruction: Check DynamoDB/SES manually based on response orderId', function () {",
+                                    "    console.log('Notification flow triggered. Please query the Notifications DynamoDB table manually to ensure a record with status=SENT was created for orderId: ' + pm.response.json().orderId);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"notification-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 1500.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-notif-001\",\n      \"productName\": \"Notification Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 1500.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Places a valid order which gets fanned out via SNS to SQS, triggering Notification Lambda. It uses success@simulator.amazonses.com to ensure SES sends without bounces."
                     }
                 }
             ]

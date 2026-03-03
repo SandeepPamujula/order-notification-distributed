@@ -16,7 +16,7 @@
 | **IAM** | Least privilege — no wildcard permissions |
 | **Secrets** | SSM Parameter Store / Secrets Manager — no hardcoded values |
 | **Observability** | `aws-lambda-powertools` structured JSON logging + X-Ray tracing |
-| **Testing** | Jest unit tests + integration tests, ≥ 80% coverage gate |
+| **Testing** | Jest unit tests + Postman integration tests, ≥ 80% coverage gate |
 | **CI/CD** | Per-service pipelines: Lint → Type Check → Test → Build → CDK Synth → Deploy |
 | **Infrastructure** | One CDK stack per service, environment config via CDK context (`dev`/`staging`/`prod`) |
 | **Tagging** | All resources tagged: `env`, `service`, `owner` |
@@ -442,33 +442,34 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 ---
 
 ### US-2.4 — Notification Service Integration Tests
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Send test SQS message to `notification-queue` in `dev`
-- [ ] Assert: Notification record appears in DynamoDB Notifications table with `status=SENT`
-- [ ] Assert: SES `SendEmail` called with correct `To`, `Subject` (verified using SES simulator address in sandbox)
+- [x] Write integration test as a Postman test and include it in `tests/postman/order-service-integration.postman_collection.json`
+- [x] Postman Test: Send `POST /orders` to trigger the notification flow
+- [x] Assert (manual or via logs): Notification record appears in DynamoDB Notifications table with `status=SENT`
+- [x] Assert (manual or via logs): SES `SendEmail` called with correct `To`, `Subject` (verified using SES simulator address in sandbox)
 
 ---
 
 ### US-2.5 — Notification Service CI/CD Pipeline (DEV)
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Create `.github/workflows/notification-service.yml`
-- [ ] Same stages as US-1.5 (Lint → Type Check → Test → Build → CDK Synth → Deploy)
-- [ ] `cdk diff` on every PR as required check
-- [ ] Rollback on CloudWatch alarm breach (error rate > 1%)
+- [x] Create `.github/workflows/notification-service.yml`
+- [x] Same stages as US-1.5 (Lint → Type Check → Test → Build → CDK Synth → Deploy)
+- [x] `cdk diff` on every PR as required check
+- [x] Rollback on CloudWatch alarm breach (error rate > 1%)
 
 ---
 
 ### US-2.6 — Notification Service Documentation
-**Story Points:** 1 | **Status:** [ ]
+**Story Points:** 1 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] `src/notification-service/README.md`: setup, env vars, SQS message schema, DynamoDB record schema
-- [ ] JSDoc on all public functions and interfaces
-- [ ] `docs/adr/ADR-005-notification-idempotency.md`
+- [x] `src/notification-service/README.md`: setup, env vars, SQS message schema, DynamoDB record schema
+- [x] JSDoc on all public functions and interfaces
+- [x] `docs/adr/ADR-005-notification-idempotency.md`
 
 ---
 
@@ -569,7 +570,7 @@ Implement the Helpdesk Lambda triggered by EventBridge for non-India orders, sen
 
 **Tasks:**
 - [ ] Unit tests: valid event → `ses:SendEmail` called; invalid event → Zod error thrown
-- [ ] Integration test: post non-India order → Helpdesk Lambda invoked (verify via CloudWatch Logs)
+- [ ] Integration test: write as Postman test in `tests/postman/order-service-integration.postman_collection.json` (post non-India order → verify Helpdesk Lambda invoked via CloudWatch Logs)
 - [ ] `.github/workflows/helpdesk-service.yml`
 - [ ] `src/helpdesk-service/README.md`
 

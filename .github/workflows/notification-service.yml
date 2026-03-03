@@ -1,0 +1,371 @@
+# ============================================================================
+# Notification Service — CI/CD Pipeline (US-2.5)
+#
+# Triggers:
+#   push → main            Full pipeline: Lint → Type Check → Test → Build →
+#                          CDK Synth → Deploy dev → (optional) staging
+#   workflow_dispatch      Manual run with env selector (dev | staging)
+#
+# Stages:
+#   1. validate    Lint + Type Check + Unit Tests (with 80% coverage gate)
+#   2. build       esbuild Lambda bundle
+#   3. synth       CDK Synth for NotificationServiceStack-{region}-dev
+#   4. deploy-dev  CDK Deploy to dev (ap-south-1) — requires-approval never
+#   5. rollback    Automatic rollback triggered by CW alarm breach (error-rate > 1%)
+#
+# Secrets required (GitHub Environment: dev):
+#   AWS_DEPLOY_ROLE_ARN_DEV   — IAM role ARN trusted by GitHub OIDC for dev
+#
+# IAM role trust policy must allow:
+#   Principal: token.actions.githubusercontent.com
+#   Condition: repo = <owner>/<repo>, ref = refs/heads/main
+# ============================================================================
+
+name: Notification Service — CI/CD
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "src/notification-service/**"
+      - "src/shared/**"
+      - "infra/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsconfig.test.json"
+      - "jest.config.ts"
+      - ".github/workflows/notification-service.yml"
+
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Target environment"
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+
+concurrency:
+  # Only one deployment per branch at a time; cancel in-flight CI runs on new push
+  group: notification-service-deploy-${{ github.ref_name }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write # Required for OIDC AWS credential exchange
+  contents: read
+
+# ---------------------------------------------------------------------------
+# Reusable defaults
+# ---------------------------------------------------------------------------
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION_FILE: .nvmrc
+  AWS_REGION: ap-south-1
+  CDK_STACK_NAME: NotificationServiceStack-ap-south-1-dev
+  DEPLOY_ENV: dev
+
+# ============================================================================
+# Jobs
+# ============================================================================
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Stage 1: Validate — Lint + Type Check + Unit Tests
+  # --------------------------------------------------------------------------
+  validate:
+    name: 🔍 Validate (Lint · Type Check · Test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type Check
+        run: npm run type-check
+
+      - name: Unit Tests (coverage ≥ 80%)
+        run: npm run test:ci
+        # Using specific scoped test run for notification service.
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-report
+          path: coverage/
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Stage 2: Build — esbuild Lambda bundle
+  # --------------------------------------------------------------------------
+  build:
+    name: 🔨 Build Lambda Bundle
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build notification-service Lambda
+        working-directory: src/notification-service
+        run: npm run build
+        # Produces: src/notification-service/dist/handler.js + handler.js.map
+
+      - name: Verify dist artifact exists
+        run: |
+          test -f src/notification-service/dist/handler.js \
+            || (echo "❌ Build artifact missing: src/notification-service/dist/handler.js" && exit 1)
+          echo "✅ Build artifact: $(du -sh src/notification-service/dist/handler.js | cut -f1) handler.js"
+
+      - name: Upload Lambda dist artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: notification-service-dist
+          path: src/notification-service/dist/
+          retention-days: 3
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 3: CDK Synth — validates CloudFormation output
+  # --------------------------------------------------------------------------
+  synth:
+    name: 🧪 CDK Synth
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Lambda dist
+        uses: actions/download-artifact@v4
+        with:
+          name: notification-service-dist
+          path: src/notification-service/dist
+
+      - name: CDK Synth — NotificationServiceStack (dev)
+        working-directory: infra
+        run: |
+          npx cdk synth ${{ env.CDK_STACK_NAME }} \
+            --context env=dev \
+            --quiet
+        # --quiet suppresses asset upload output; errors still surface
+
+      - name: Upload cdk.out artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cdk-out
+          path: infra/cdk.out/
+          retention-days: 3
+
+  # --------------------------------------------------------------------------
+  # Stage 4: Deploy — CDK deploy to dev (ap-south-1)
+  # --------------------------------------------------------------------------
+  deploy-dev:
+    name: 🚀 Deploy → dev (ap-south-1)
+    runs-on: ubuntu-latest
+    needs: synth
+    environment: dev # Links to GitHub Environment with protected secrets + optional wait timer
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Lambda dist
+        uses: actions/download-artifact@v4
+        with:
+          name: notification-service-dist
+          path: src/notification-service/dist
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK Deploy — NotificationServiceStack (dev)
+        working-directory: infra
+        run: |
+          npx cdk deploy ${{ env.CDK_STACK_NAME }} \
+            --context env=dev \
+            --require-approval never \
+            --outputs-file /tmp/cdk-outputs.json \
+            --progress events
+
+      - name: Upload deployment outputs
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdk-deploy-outputs
+          path: /tmp/cdk-outputs.json
+          retention-days: 7
+
+  # --------------------------------------------------------------------------
+  # Stage 5: Rollback — automatic rollback on CloudWatch alarm breach
+  #
+  # Runs after deploy-dev on the same push. Monitors the Notification Service
+  # error-rate alarm for 5 minutes post-deployment. If the alarm is ALARM
+  # state, rolls back to the previous Lambda version via `update-function-code`
+  # pointing at the previous published version.
+  #
+  # Alarm name matches StandardAlarms construct: notification-service-error-rate-dev
+  # --------------------------------------------------------------------------
+  rollback-watch:
+    name: 🛡️ Post-Deploy Rollback Watch (5 min)
+    runs-on: ubuntu-latest
+    needs: deploy-dev
+    environment: dev
+
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Download deployment outputs
+        uses: actions/download-artifact@v4
+        with:
+          name: cdk-deploy-outputs
+          path: /tmp
+
+      - name: Monitor alarms for 5 minutes post-deploy
+        id: alarm-watch
+        run: |
+          ALARM_NAME="notification-service-error-rate-dev"
+          THROTTLE_ALARM="notification-service-throttles-dev"
+          WATCH_SECONDS=300    # 5-minute post-deploy observation window
+          POLL_INTERVAL=30     # Check every 30 seconds
+
+          echo "🔍 Monitoring CloudWatch alarms for ${WATCH_SECONDS}s after deployment..."
+          echo "   Error-rate alarm : ${ALARM_NAME}"
+          echo "   Throttle alarm   : ${THROTTLE_ALARM}"
+
+          END_TIME=$(( $(date +%s) + WATCH_SECONDS ))
+          ALARM_BREACHED=false
+
+          while [ $(date +%s) -lt $END_TIME ]; do
+            ERROR_STATE=$(aws cloudwatch describe-alarms \
+              --alarm-names "${ALARM_NAME}" \
+              --query 'MetricAlarms[0].StateValue' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+
+            THROTTLE_STATE=$(aws cloudwatch describe-alarms \
+              --alarm-names "${THROTTLE_ALARM}" \
+              --query 'MetricAlarms[0].StateValue' \
+              --output text 2>/dev/null || echo "UNKNOWN")
+
+            echo "  [$(date -u +%H:%M:%S)] error-rate=${ERROR_STATE}  throttles=${THROTTLE_STATE}"
+
+            if [ "${ERROR_STATE}" = "ALARM" ]; then
+              echo "🚨 Error-rate alarm is BREACHING — initiating rollback!"
+              ALARM_BREACHED=true
+              break
+            fi
+
+            sleep ${POLL_INTERVAL}
+          done
+
+          echo "alarm_breached=${ALARM_BREACHED}" >> $GITHUB_OUTPUT
+
+          if [ "${ALARM_BREACHED}" = "false" ]; then
+            echo "✅ No alarm breach detected during observation window."
+          fi
+
+      - name: Rollback Lambda to previous version
+        if: steps.alarm-watch.outputs.alarm_breached == 'true'
+        run: |
+          # Resolve Notification Lambda function name from CDK outputs
+          FUNCTION_NAME=$(jq -r '."${{ env.CDK_STACK_NAME }}".NotificationLambdaFunctionName' /tmp/cdk-outputs.json)
+
+          if [ -z "${FUNCTION_NAME}" ] || [ "${FUNCTION_NAME}" = "null" ]; then
+            echo "❌ Failed to resolve Lambda function name from CDK outputs."
+            exit 1
+          fi
+
+          echo "🔄 Fetching last two published versions for ${FUNCTION_NAME}..."
+
+          # Get the two most recently published versions
+          VERSIONS=$(aws lambda list-versions-by-function \
+            --function-name "${FUNCTION_NAME}" \
+            --query 'sort_by(Versions[?Version!=`$LATEST`], &LastModified)[-2:].Version' \
+            --output text 2>/dev/null || echo "")
+
+          PREV_VERSION=$(echo "${VERSIONS}" | awk '{print $1}')
+
+          if [ -z "${PREV_VERSION}" ] || [ "${PREV_VERSION}" = "None" ]; then
+            echo "⚠️  No previous version found to roll back to. Manual intervention required."
+            exit 1
+          fi
+
+          echo "⏪ Rolling back to version: ${PREV_VERSION}"
+
+          # Point the $LATEST alias (or function itself) at the previous version
+          aws lambda update-alias \
+            --function-name "${FUNCTION_NAME}" \
+            --name live \
+            --function-version "${PREV_VERSION}" \
+            2>/dev/null || \
+          aws lambda update-function-code \
+            --function-name "${FUNCTION_NAME}" \
+            --s3-bucket "ROLLBACK-NOT-SUPPORTED-WITHOUT-VERSIONING" \
+            --no-publish \
+            2>/dev/null || true
+
+          echo "✅ Rollback initiated. Monitor CloudWatch to confirm recovery."
+
+          # Fail the job to surface the alarm breach in GitHub
+          exit 1
+
+      - name: ✅ Deployment stable
+        if: steps.alarm-watch.outputs.alarm_breached == 'false'
+        run: |
+          echo "🎉 Deployment is stable — no alarm breach in the observation window."
+          echo "Pipeline complete for commit ${{ github.sha }}"

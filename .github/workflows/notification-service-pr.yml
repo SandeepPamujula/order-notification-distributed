@@ -1,0 +1,255 @@
+# ============================================================================
+# Notification Service — PR Check: CDK Diff + Validate (US-2.5)
+#
+# Runs on every PR targeting main that touches notification-service or infra.
+# Posts a CDK diff comment on the PR so reviewers can see infrastructure
+# changes without needing AWS access.
+#
+# This is a REQUIRED check — PRs cannot be merged without it passing.
+#
+# Secrets required (GitHub Environment: dev):
+#   AWS_DEPLOY_ROLE_ARN_DEV — OIDC IAM role for read-only CDK diff access
+# ============================================================================
+
+name: Notification Service — PR Check (CDK Diff)
+
+on:
+  pull_request:
+    branches:
+      - main
+      - "release/**"
+    paths:
+      - "src/notification-service/**"
+      - "src/shared/**"
+      - "infra/**"
+      - "package.json"
+      - "package-lock.json"
+      - "tsconfig.json"
+      - "tsconfig.test.json"
+      - "jest.config.ts"
+
+concurrency:
+  group: notification-service-pr-${{ github.head_ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write # OIDC token for CDK diff (read-only AWS operations)
+  contents: read
+  pull-requests: write # Post CDK diff as a PR comment
+
+defaults:
+  run:
+    shell: bash
+
+env:
+  NODE_VERSION_FILE: .nvmrc
+  AWS_REGION: ap-south-1
+  CDK_STACK_NAME: NotificationServiceStack-ap-south-1-dev
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Stage 1: Validate (same as main pipeline — must pass before diff)
+  # --------------------------------------------------------------------------
+  validate:
+    name: 🔍 Validate (Lint · Type Check · Test)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Type Check
+        run: npm run type-check
+
+      - name: Unit Tests (coverage ≥ 80%)
+        run: npm run test:ci
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pr-coverage-report
+          path: coverage/
+          retention-days: 3
+
+  # --------------------------------------------------------------------------
+  # Stage 2: Build Lambda (required for CDK synth to resolve the asset)
+  # --------------------------------------------------------------------------
+  build:
+    name: 🔨 Build Lambda Bundle
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build notification-service Lambda
+        working-directory: src/notification-service
+        run: npm run build
+
+      - name: Verify build artifact
+        run: |
+          test -f src/notification-service/dist/handler.js \
+            || (echo "❌ Build artifact missing" && exit 1)
+
+      - name: Upload Lambda dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: pr-notification-service-dist
+          path: src/notification-service/dist/
+          retention-days: 1
+          if-no-files-found: error
+
+  # --------------------------------------------------------------------------
+  # Stage 3: CDK Diff — posts diff output as a PR comment
+  # --------------------------------------------------------------------------
+  cdk-diff:
+    name: 🔬 CDK Diff (dev — ap-south-1)
+    runs-on: ubuntu-latest
+    needs: build
+    environment: dev
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ${{ env.NODE_VERSION_FILE }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download Lambda dist
+        uses: actions/download-artifact@v4
+        with:
+          name: pr-notification-service-dist
+          path: src/notification-service/dist
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN_DEV }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: CDK Diff — NotificationServiceStack (dev)
+        id: cdk-diff
+        run: |
+          cd infra
+
+          # Capture both stdout and stderr; exit 0 even if there are diffs
+          # (cdk diff exits 1 when there are changes — that is expected on PRs)
+          DIFF_OUTPUT=$(npx cdk diff ${{ env.CDK_STACK_NAME }} \
+            --context env=dev \
+            2>&1 || true)
+
+          echo "${DIFF_OUTPUT}"
+
+          # Write to file for the comment step
+          echo "${DIFF_OUTPUT}" > /tmp/cdk-diff-output.txt
+
+          # Expose truncated output to GITHUB_OUTPUT (max 65KB)
+          {
+            echo "diff_output<<EOF"
+            head -c 60000 /tmp/cdk-diff-output.txt
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+          # Determine if there are any changes (fail if security group changes found)
+          if echo "${DIFF_OUTPUT}" | grep -q "Security Group Changes"; then
+            echo "⚠️  Security group changes detected — review carefully!"
+          fi
+
+          if echo "${DIFF_OUTPUT}" | grep -qE "^\[.*\] There were no differences"; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Post CDK diff comment on PR
+        uses: actions/github-script@v7
+        env:
+          DIFF_OUTPUT: ${{ steps.cdk-diff.outputs.diff_output }}
+        with:
+          script: |
+            const hasDiff  = '${{ steps.cdk-diff.outputs.has_changes }}' === 'true';
+            const diffText = process.env.DIFF_OUTPUT;
+            const emoji    = hasDiff ? '⚠️' : '✅';
+            const title    = hasDiff
+              ? 'Infrastructure changes detected'
+              : 'No infrastructure changes';
+
+            const body = `## ${emoji} Notification Service CDK Diff — \`${{ env.CDK_STACK_NAME }}\`
+
+            **${title}**
+
+            <details>
+            <summary>CDK diff output (click to expand)</summary>
+
+            \`\`\`
+            ${diffText}
+            \`\`\`
+
+            </details>
+
+            > Generated by commit \`${{ github.sha }}\` against \`dev\` environment.
+            > This diff is **read-only** — nothing was deployed.`;
+
+            // Find and update existing bot comment, or create a new one
+            const { data: comments } = await github.rest.issues.listComments({
+              owner:      context.repo.owner,
+              repo:       context.repo.repo,
+              issue_number: context.issue.number,
+            });
+
+            const botComment = comments.find(
+              c => c.user.type === 'Bot' && c.body.includes('Notification Service CDK Diff')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                comment_id: botComment.id,
+                body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner:      context.repo.owner,
+                repo:       context.repo.repo,
+                issue_number: context.issue.number,
+                body,
+              });
+            }
+
+      - name: Upload full diff output
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: cdk-diff-output
+          path: /tmp/cdk-diff-output.txt
+          retention-days: 3

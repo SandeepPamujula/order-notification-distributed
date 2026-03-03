@@ -42,6 +42,16 @@ async function withRetry<T>(operation: () => Promise<T>): Promise<T> {
     throw lastError;
 }
 
+/**
+ * Lambda handler for processing SQS messages containing order events.
+ * Responsible for validating the event, ensuring idempotency, sending
+ * an email via SES, and recording the notification result in DynamoDB.
+ *
+ * It uses SQS partial batch responses natively.
+ *
+ * @param event The SQS event object containing a batch of messages.
+ * @returns An object containing `batchItemFailures` for messages that need to be retried.
+ */
 export const handler = async (event: SQSEvent): Promise<SQSBatchResponse> => {
     const batchItemFailures: { itemIdentifier: string }[] = [];
 

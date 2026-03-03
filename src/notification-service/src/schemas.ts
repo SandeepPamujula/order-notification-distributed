@@ -10,7 +10,10 @@ import {
     OrderStatusSchema,
 } from '@shared/schemas';
 
-// Reusable payload schema piece (mirrors OrderPayload from order-service)
+/**
+ * Reusable payload schema piece representing the core order details.
+ * This mirrors the `OrderPayload` from the order-service.
+ */
 export const OrderPayloadSchema = z.object({
     orderId: UuidSchema,
     userId: NonEmptyStringSchema,
@@ -21,6 +24,10 @@ export const OrderPayloadSchema = z.object({
     items: z.array(OrderItemSchema).min(1),
 });
 
+/**
+ * Zod schema defining the structure of an SNS Order Event.
+ * This event is published by the order-service and consumed by the notification-service via SQS.
+ */
 export const SnsOrderEventSchema = z.object({
     eventId: UuidSchema.or(NonEmptyStringSchema),
     eventType: z.literal('ORDER_PLACED'),
@@ -33,8 +40,13 @@ export const SnsOrderEventSchema = z.object({
     }),
 });
 
+/** TypeScript type inferred from the SnsOrderEventSchema. */
 export type SnsOrderEvent = z.infer<typeof SnsOrderEventSchema>;
 
+/**
+ * Interface representing a notification record stored in DynamoDB.
+ * Tracks the status, channel, and payload of an outgoing notification.
+ */
 export interface NotificationRecord {
     notificationId: string;
     orderId: string;
