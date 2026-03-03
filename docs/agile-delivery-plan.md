@@ -428,15 +428,16 @@ Implement the Notification Lambda triggered by SQS, persisting notification reco
 ---
 
 ### US-2.3 — Notification Service Unit Tests
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Mock SES (`SendEmailCommand`) and DynamoDB (`PutItemCommand`)
-- [ ] Test: valid SQS batch → sends email + writes DDB record for each message
-- [ ] Test: SES failure → `batchItemFailures` contains the failing `itemIdentifier`
-- [ ] Test: duplicate message (idempotency) → email NOT sent, DDB not double-written
-- [ ] Test: Zod parse failure on malformed message → item in `batchItemFailures`
-- [ ] Coverage ≥ 80%
+- [x] Mock SES (`SendEmailCommand`) and DynamoDB (`PutItemCommand`)
+- [x] Test: valid SQS batch → sends email + writes DDB record for each message
+- [x] Test: SES failure → `batchItemFailures` contains the failing `itemIdentifier`
+- [x] Test: duplicate message (idempotency) → email NOT sent, DDB not double-written
+- [x] Test: Zod parse failure on malformed message → item in `batchItemFailures`
+- [x] Coverage ≥ 80%
+
 
 ---
 
