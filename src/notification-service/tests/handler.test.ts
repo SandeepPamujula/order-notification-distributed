@@ -13,7 +13,7 @@ import { handler } from '../src/handler';
 // Test helpers
 const TEST_ENV = {
     NOTIFICATIONS_TABLE_NAME: 'notifications-dev',
-    SES_FROM_ADDRESS: 'test@sporder.com',
+    SES_FROM_ADDRESS: 'test@spkumarorder.com',
 };
 
 const validSnsOrderEvent = {

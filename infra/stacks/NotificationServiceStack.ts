@@ -71,13 +71,13 @@ export class NotificationServiceStack extends cdk.Stack {
         // 3. Store SES configuration in SSM
         new ssm.StringParameter(this, 'SesFromAddressParam', {
             parameterName: `/notification-service/${envName}/ses-from-address`,
-            stringValue: `noreply@sporder.com`,
+            stringValue: `noreply@spkumarorder.com`,
             description: 'SES From address for notifications',
         });
 
         new ssm.StringParameter(this, 'SesReplyToAddressParam', {
             parameterName: `/notification-service/${envName}/ses-reply-to-address`,
-            stringValue: `helpdesk@sporder.com`,
+            stringValue: `helpdesk@spkumarorder.com`,
             description: 'SES Reply-To address for notifications',
         });
 
@@ -88,8 +88,8 @@ export class NotificationServiceStack extends cdk.Stack {
             code: lambdaCode ?? lambda.Code.fromAsset('../src/notification-service/dist'),
             environment: {
                 NOTIFICATIONS_TABLE_NAME: this.notificationsTable.tableName,
-                SES_FROM_ADDRESS: `noreply@sporder.com`,
-                SES_REPLY_TO_ADDRESS: `helpdesk@sporder.com`,
+                SES_FROM_ADDRESS: `noreply@spkumarorder.com`,
+                SES_REPLY_TO_ADDRESS: `helpdesk@spkumarorder.com`,
             },
         });
 

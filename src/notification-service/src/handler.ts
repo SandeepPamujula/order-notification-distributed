@@ -10,7 +10,7 @@ import { SnsOrderEventSchema, NotificationRecord } from './schemas';
 const logger = createLogger({ serviceName: 'notification-service' });
 
 const NOTIFICATIONS_TABLE_NAME = process.env['NOTIFICATIONS_TABLE_NAME'] ?? '';
-const SES_FROM_ADDRESS = process.env['SES_FROM_ADDRESS'] ?? 'noreply@sporder.com';
+const SES_FROM_ADDRESS = process.env['SES_FROM_ADDRESS'] ?? 'noreply@spkumarorder.com';
 
 /**
  * Sleeps for a given number of milliseconds

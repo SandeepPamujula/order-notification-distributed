@@ -2,7 +2,7 @@
 
 ## 1. Overview
 
-A globally distributed, event-driven microservices system for processing orders at scale. The system spans two AWS regions (`ap-south-1` India, `us-east-1` US) with automatic failover via Route 53. The API is accessible at `api.sporder.com`.
+A globally distributed, event-driven microservices system for processing orders at scale. The system spans two AWS regions (`ap-south-1` India, `us-east-1` US) with automatic failover via Route 53. The API is accessible at `api.spkumarorder.com`.
 
 | Attribute | Detail |
 |---|---|
@@ -26,7 +26,7 @@ graph TB
         R53["Route 53<br/>Latency-Based Routing<br/>+ Health Checks"]
     end
 
-    User -->|"api.sporder.com"| R53
+    User -->|"api.spkumarorder.com"| R53
 
     subgraph "Region: ap-south-1 (India)"
         direction TB
@@ -113,7 +113,7 @@ graph TB
         R53["Route 53<br/>Latency-Based Routing<br/>+ Health Checks"]
     end
 
-    User -->|"api.sporder.com"| R53
+    User -->|"api.spkumarorder.com"| R53
 
     subgraph "Region: ap-south-1 (India)"
         direction TB
@@ -246,7 +246,7 @@ sequenceDiagram
     participant EB as EventBridge
     participant HL as Helpdesk Lambda
 
-    User->>R53: POST api.sporder.com/orders
+    User->>R53: POST api.spkumarorder.com/orders
     R53->>APIGW: Route to nearest region
     APIGW->>OL: Invoke
     OL->>DDB: PutItem (order)
@@ -293,7 +293,7 @@ sequenceDiagram
     participant EB as EventBridge
     participant HL as Helpdesk Lambda
 
-    User->>R53: POST api.sporder.com/orders
+    User->>R53: POST api.spkumarorder.com/orders
     R53->>APIGW: Route to nearest region
     APIGW->>OL: Invoke
     OL->>DDB: PutItem (order)
@@ -332,7 +332,7 @@ sequenceDiagram
     participant US as us-east-1 (US)
 
     Note over AP: Region healthy
-    User->>R53: POST api.sporder.com/orders
+    User->>R53: POST api.spkumarorder.com/orders
     R53->>AP: Route (lowest latency)
     AP-->>User: 201 Created (~20ms)
 
@@ -343,7 +343,7 @@ sequenceDiagram
     AP--xHC: ❌ Failure x3
     HC->>R53: Mark ap-south-1 UNHEALTHY
 
-    User->>R53: POST api.sporder.com/orders
+    User->>R53: POST api.spkumarorder.com/orders
     R53->>US: Route (only healthy region)
     US-->>User: 201 Created (~200ms)
 
@@ -352,7 +352,7 @@ sequenceDiagram
     AP-->>HC: ✅ Healthy
     HC->>R53: Mark ap-south-1 HEALTHY
 
-    User->>R53: POST api.sporder.com/orders
+    User->>R53: POST api.spkumarorder.com/orders
     R53->>AP: Route (lowest latency again)
     AP-->>User: 201 Created (~20ms)
 ```

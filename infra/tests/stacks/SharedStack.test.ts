@@ -9,7 +9,7 @@ import { SharedStack } from '../../stacks/SharedStack';
 
 const DEFAULT_PROPS = {
     envName: 'dev',
-    domainName: 'sporder.com',
+    domainName: 'spkumarorder.com',
     primaryApiGatewayDomainName: 'abc123.execute-api.ap-south-1.amazonaws.com',
     secondaryApiGatewayDomainName: 'xyz789.execute-api.us-east-1.amazonaws.com',
     owner: 'platform-team',
@@ -46,10 +46,10 @@ describe('SharedStack', () => {
     // Route 53 hosted zone
     // -------------------------------------------------------------------------
     describe('Route 53 hosted zone', () => {
-        it('creates a public hosted zone for api.sporder.com', () => {
+        it('creates a public hosted zone for api.spkumarorder.com', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::Route53::HostedZone', {
-                Name: 'api.sporder.com.',
+                Name: 'api.spkumarorder.com.',
             });
         });
 
@@ -177,11 +177,11 @@ describe('SharedStack', () => {
         it('points records at the api subdomain', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::Route53::RecordSet', {
-                Name: 'api.sporder.com.',
+                Name: 'api.spkumarorder.com.',
                 Region: 'ap-south-1',
             });
             template.hasResourceProperties('AWS::Route53::RecordSet', {
-                Name: 'api.sporder.com.',
+                Name: 'api.spkumarorder.com.',
                 Region: 'us-east-1',
             });
         });
@@ -227,7 +227,7 @@ describe('SharedStack', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::SSM::Parameter', {
                 Name: '/shared/dev/api-subdomain',
-                Value: 'api.sporder.com',
+                Value: 'api.spkumarorder.com',
                 Type: 'String',
             });
         });
@@ -275,7 +275,7 @@ describe('SharedStack', () => {
         it('has an ApiSubdomain output with the correct value', () => {
             const { template } = buildStack();
             template.hasOutput('ApiSubdomain', {
-                Value: 'api.sporder.com',
+                Value: 'api.spkumarorder.com',
             });
         });
 

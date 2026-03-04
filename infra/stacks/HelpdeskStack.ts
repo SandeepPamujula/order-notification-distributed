@@ -29,7 +29,7 @@ export class HelpdeskStack extends cdk.Stack {
         // 1. Store helpdesk email in SSM
         new ssm.StringParameter(this, 'SesHelpdeskAddressParam', {
             parameterName: `/helpdesk-service/${envName}/ses-helpdesk-address`,
-            stringValue: 'helpdesk@sporder.com',
+            stringValue: 'helpdesk@spkumarorder.com',
             description: 'Helpdesk email address for SES',
         });
 
@@ -39,7 +39,7 @@ export class HelpdeskStack extends cdk.Stack {
             handler: 'handler.handler',
             code: lambdaCode ?? lambda.Code.fromAsset('../src/helpdesk-service/dist'),
             environment: {
-                SES_HELPDESK_ADDRESS: 'helpdesk@sporder.com',
+                SES_HELPDESK_ADDRESS: 'helpdesk@spkumarorder.com',
             },
         });
 

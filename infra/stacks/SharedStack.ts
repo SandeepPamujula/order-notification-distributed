@@ -15,7 +15,7 @@ export interface SharedStackProps extends cdk.StackProps {
     /** Environment name: dev | staging | prod */
     readonly envName: string;
 
-    /** The apex domain name for the hosted zone (e.g. sporder.com). */
+    /** The apex domain name for the hosted zone (e.g. spkumarorder.com). */
     readonly domainName: string;
 
     /**
@@ -38,7 +38,7 @@ export interface SharedStackProps extends cdk.StackProps {
  * Shared infrastructure stack — deployed once to `us-east-1`.
  *
  * Responsibilities:
- * - Owns the Route 53 public hosted zone for `api.sporder.com`.
+ * - Owns the Route 53 public hosted zone for `api.spkumarorder.com`.
  * - Provisions Route 53 HTTP health checks for both regional API Gateway
  *   `/health` endpoints (failure threshold: 3, interval: 30 s).
  * - Creates latency-based A-alias records pointing to each region's API GW,
@@ -52,7 +52,7 @@ export interface SharedStackProps extends cdk.StackProps {
  * new SharedStack(app, 'SharedStack-us-east-1-dev', {
  *   env: { account: '123456789012', region: 'us-east-1' },
  *   envName: 'dev',
- *   domainName: 'sporder.com',
+ *   domainName: 'spkumarorder.com',
  *   primaryApiGatewayDomainName: 'abc123.execute-api.ap-south-1.amazonaws.com',
  *   secondaryApiGatewayDomainName: 'xyz789.execute-api.us-east-1.amazonaws.com',
  *   owner: 'platform-team',

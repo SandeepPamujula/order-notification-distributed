@@ -79,7 +79,7 @@ new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
 new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
     env: usEast1Env,
     envName: envConfig.env,
-    domainName: envConfig.domainName ?? 'sporder.com',
+    domainName: envConfig.domainName ?? 'spkumarorder.com',
     primaryApiGatewayDomainName:
         envConfig.primaryApiGatewayDomainName ??
         `placeholder-primary.execute-api.${envConfig.region}.amazonaws.com`,

@@ -1131,6 +1131,78 @@
                     }
                 }
             ]
+        },
+        {
+            "name": "8 — Helpdesk Service Flow (US-4.3)",
+            "description": "Integration test for the Helpdesk Service (US-4.3).\nPlaces an order for a non-Indian user to trigger the Helpdesk Lambda via EventBridge.",
+            "item": [
+                {
+                    "name": "POST /orders — helpdesk flow trigger (non-India)",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId', uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-helpdesk-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status is 201 Created', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Instruction: Check CloudWatch Logs manually for Helpdesk Lambda', function () {",
+                                    "    console.log('Helpdesk flow triggered for US. Please query the Helpdesk Lambda logs to ensure it was invoked for orderId: ' + pm.response.json().orderId);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"helpdesk-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"US\",\n  \"currency\": \"USD\",\n  \"totalAmount\": 1500.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-helpdesk-001\",\n      \"productName\": \"Helpdesk Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 1500.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{BASE_URL}}/orders",
+                            "host": [
+                                "{{BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Places a valid order for a non-India user (US) which gets put to EventBridge, triggering Helpdesk Lambda."
+                    }
+                }
+            ]
         }
     ],
     "event": [
