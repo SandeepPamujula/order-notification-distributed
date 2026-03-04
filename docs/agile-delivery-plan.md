@@ -481,24 +481,24 @@ Implement the Inventory Lambda triggered by SQS that logs/prints order details (
 ---
 
 ### US-3.1 — CDK Stack: Inventory Service Infrastructure (Phase 1)
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Create `infra/stacks/InventoryServiceStack.ts`
-- [ ] Import `inventory-queue` from `OrderServiceStack` (via SSM)
-- [ ] Provision Inventory Lambda (`PowertoolsLambda`) as SQS event source (batch size: 10, bisect on error: true)
-- [ ] Lambda IAM (least privilege): `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` on inventory-queue
-- [ ] Apply `TaggingAspect` with `service=inventory-service`
+- [x] Create `infra/stacks/InventoryServiceStack.ts`
+- [x] Import `inventory-queue` from `OrderServiceStack` (via SSM)
+- [x] Provision Inventory Lambda (`PowertoolsLambda`) as SQS event source (batch size: 10, bisect on error: true)
+- [x] Lambda IAM (least privilege): `sqs:ReceiveMessage`, `sqs:DeleteMessage`, `sqs:GetQueueAttributes` on inventory-queue
+- [x] Apply `TaggingAspect` with `service=inventory-service`
 
 ---
 
 ### US-3.2 — Inventory Lambda Handler
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Create `src/inventory-service/handler.ts`
-- [ ] For each SQS record: extract `correlationId`, log full order details via Powertools structured logger
-- [ ] Return success for all records (no DLQ expected for simple logging failures — log errors and continue)
+- [x] Create `src/inventory-service/handler.ts`
+- [x] For each SQS record: extract `correlationId`, log full order details via Powertools structured logger
+- [x] Return success for all records (no DLQ expected for simple logging failures — log errors and continue)
 
 **Acceptance Criteria:**
 - Order details logged as structured JSON on every invocation
@@ -507,13 +507,13 @@ Implement the Inventory Lambda triggered by SQS that logs/prints order details (
 ---
 
 ### US-3.3 — Inventory Service Tests, CI/CD & Docs
-**Story Points:** 2 | **Status:** [ ]
+**Story Points:** 2 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Unit tests: valid batch → logs each record; malformed message → logs error, no throw
-- [ ] Coverage ≥ 80%
-- [ ] `.github/workflows/inventory-service.yml` (same pipeline stages)
-- [ ] `src/inventory-service/README.md`
+- [x] Unit tests: valid batch → logs each record; malformed message → logs error, no throw
+- [x] Coverage ≥ 80%
+- [x] `.github/workflows/inventory-service.yml` (same pipeline stages)
+- [x] `src/inventory-service/README.md`
 
 ---
 
