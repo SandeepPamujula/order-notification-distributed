@@ -525,19 +525,19 @@ Implement the Helpdesk Lambda triggered by EventBridge for non-India orders, sen
 ---
 
 ### US-4.1 — CDK Stack: Helpdesk Service Infrastructure
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Create `infra/stacks/HelpdeskStack.ts`
-- [ ] Provision EventBridge rule on `order-events-bus-{env}`:
+- [x] Create `infra/stacks/HelpdeskStack.ts`
+- [x] Provision EventBridge rule on `order-events-bus-{env}`:
   - Source: `order-service`
   - `detail-type`: `OrderPlaced`
   - Filter: `detail.country` → `{ "anything-but": "IN" }`
-- [ ] Provision Helpdesk Lambda (`PowertoolsLambda`) as EventBridge target
-- [ ] Lambda IAM: `ses:SendEmail` on verified helpdesk SES identity only
-- [ ] Store helpdesk email in SSM: `/helpdesk-service/{env}/ses-helpdesk-address`
-- [ ] Apply `TaggingAspect` with `service=helpdesk-service`
-- [ ] Write `docs/adr/ADR-006-eventbridge-helpdesk-routing.md`
+- [x] Provision Helpdesk Lambda (`PowertoolsLambda`) as EventBridge target
+- [x] Lambda IAM: `ses:SendEmail` on verified helpdesk SES identity only
+- [x] Store helpdesk email in SSM: `/helpdesk-service/{env}/ses-helpdesk-address`
+- [x] Apply `TaggingAspect` with `service=helpdesk-service`
+- [x] Write `docs/adr/ADR-006-eventbridge-helpdesk-routing.md`
 
 **Acceptance Criteria:**
 - EventBridge rule only triggers for `country ≠ "IN"`

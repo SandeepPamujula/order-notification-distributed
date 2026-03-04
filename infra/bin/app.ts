@@ -8,6 +8,7 @@ import { InventoryServiceStack } from '../stacks/InventoryServiceStack';
 import { NotificationServiceStack } from '../stacks/NotificationServiceStack';
 import { OrderServiceStack } from '../stacks/OrderServiceStack';
 import { SharedStack } from '../stacks/SharedStack';
+import { HelpdeskStack } from '../stacks/HelpdeskStack';
 //   cdk synth --context env=dev
 //   cdk deploy --all --context env=dev --require-approval never
 //   cdk diff --context env=staging
@@ -128,6 +129,16 @@ new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envN
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Inventory Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
+});
+
+// ---------------------------------------------------------------------------
+// Helpdesk Service Stack (primary region)
+// ---------------------------------------------------------------------------
+new HelpdeskStack(app, `HelpdeskStack-${envConfig.region}-${envName}`, {
+    env: primaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Helpdesk Service — Phase 1 & 2 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
 
 app.synth();
