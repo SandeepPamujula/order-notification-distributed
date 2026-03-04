@@ -33,10 +33,10 @@ export class TaggingAspect implements cdk.IAspect {
      * Tags are applied to every `CfnResource` in the tree.
      */
     public visit(node: IConstruct): void {
-        if (node instanceof cdk.CfnResource) {
-            cdk.Tags.of(node).add('env', this.props.env);
-            cdk.Tags.of(node).add('service', this.props.service);
-            cdk.Tags.of(node).add('owner', this.props.owner);
+        if (cdk.TagManager.isTaggable(node)) {
+            node.tags.setTag('env', this.props.env);
+            node.tags.setTag('service', this.props.service);
+            node.tags.setTag('owner', this.props.owner);
         }
     }
 }

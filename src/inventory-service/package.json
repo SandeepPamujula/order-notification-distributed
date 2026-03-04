@@ -2,7 +2,7 @@
     "name": "@order-notification/inventory-service",
     "version": "1.0.0",
     "private": true,
-    "description": "Inventory Service Lambda — logs order details from SQS/Streams events",
+    "description": "Inventory Service Lambda — logs SQS order events",
     "main": "dist/handler.js",
     "scripts": {
         "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/* --minify",
@@ -16,7 +16,6 @@
         "zod": "^3.23.0"
     },
     "devDependencies": {
-        "@types/aws-lambda": "^8.10.0",
-        "aws-sdk-client-mock": "^4.0.0"
+        "@types/aws-lambda": "^8.10.0"
     }
 }

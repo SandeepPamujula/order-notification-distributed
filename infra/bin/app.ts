@@ -4,14 +4,10 @@ import 'source-map-support/register';
 import * as cdk from 'aws-cdk-lib';
 
 import { BaselineStack } from '../stacks/BaselineStack';
+import { InventoryServiceStack } from '../stacks/InventoryServiceStack';
 import { NotificationServiceStack } from '../stacks/NotificationServiceStack';
 import { OrderServiceStack } from '../stacks/OrderServiceStack';
 import { SharedStack } from '../stacks/SharedStack';
-
-// ---------------------------------------------------------------------------
-// CDK App Entry Point
-// ---------------------------------------------------------------------------
-// Usage examples:
 //   cdk synth --context env=dev
 //   cdk deploy --all --context env=dev --require-approval never
 //   cdk diff --context env=staging
@@ -122,6 +118,16 @@ new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Notification Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
+});
+
+// ---------------------------------------------------------------------------
+// Inventory Service Stack (primary region)
+// ---------------------------------------------------------------------------
+new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envName}`, {
+    env: primaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Inventory Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
 
 app.synth();
