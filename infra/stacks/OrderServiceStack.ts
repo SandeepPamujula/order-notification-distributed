@@ -14,6 +14,9 @@ import type { Construct } from 'constructs';
 import { TaggingAspect } from '../aspects/TaggingAspect';
 import { DeadLetterQueue } from '../constructs/DeadLetterQueue';
 import { PowertoolsLambda } from '../constructs/PowertoolsLambda';
+import { StandardAlarms } from '../constructs/StandardAlarms';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 
 // ---------------------------------------------------------------------------
 // OrderServiceStack — Phase 1 infrastructure for the Order Service
@@ -155,9 +158,12 @@ export class OrderServiceStack extends cdk.Stack {
         // -----------------------------------------------------------------------
 
         // --- Notification DLQ & queue ---
+        const alarmTopicArn = `arn:aws:sns:${this.region}:${this.account}:alarm-topic-${envName}`;
+
         const notificationDlq = new DeadLetterQueue(this, 'NotificationDLQ', {
             queueName: 'notification',
             envName,
+            alarmTopicArn,
         });
 
         this.notificationQueue = new sqs.Queue(this, 'NotificationQueue', {
@@ -174,6 +180,7 @@ export class OrderServiceStack extends cdk.Stack {
         const inventoryDlq = new DeadLetterQueue(this, 'InventoryDLQ', {
             queueName: 'inventory',
             envName,
+            alarmTopicArn,
         });
 
         this.inventoryQueue = new sqs.Queue(this, 'InventoryQueue', {
@@ -261,6 +268,18 @@ export class OrderServiceStack extends cdk.Stack {
         messagingModeParam.grantRead(this.orderLambda);
 
         // -----------------------------------------------------------------------
+        // 7.1. CloudWatch Alarms (Order Lambda)
+        // -----------------------------------------------------------------------
+        new StandardAlarms(this, 'OrderAlarms', {
+            lambdaFunction: this.orderLambda,
+            serviceName: 'order-service',
+            envName,
+            errorRateThresholdPercent: 1,
+            throttleCountThreshold: 0,
+            alarmTopicArn,
+        });
+
+        // -----------------------------------------------------------------------
         // 8. HTTP API Gateway — POST /orders + GET /health
         //
         // HTTP API (v2) is used instead of REST API (v1) — lower cost and
@@ -292,6 +311,68 @@ export class OrderServiceStack extends cdk.Stack {
             methods: [apigwv2.HttpMethod.GET],
             integration: orderLambdaIntegration,
         });
+
+        // -----------------------------------------------------------------------
+        // 8.1. API Gateway Alarms (p99 latency > 1000ms, 5XX rate > 1%)
+        // -----------------------------------------------------------------------
+        const apiGw5xxMetric = new cloudwatch.Metric({
+            namespace: 'AWS/ApiGateway',
+            metricName: '5XXError',
+            dimensionsMap: { ApiId: this.httpApi.apiId },
+            period: cdk.Duration.minutes(1),
+            statistic: 'Sum',
+        });
+
+        const apiGwCountMetric = new cloudwatch.Metric({
+            namespace: 'AWS/ApiGateway',
+            metricName: 'Count',
+            dimensionsMap: { ApiId: this.httpApi.apiId },
+            period: cdk.Duration.minutes(1),
+            statistic: 'Sum',
+        });
+
+        const apiGw5xxRateMetric = new cloudwatch.MathExpression({
+            expression: 'errors / MAX([invocations, 1]) * 100',
+            usingMetrics: {
+                errors: apiGw5xxMetric,
+                invocations: apiGwCountMetric,
+            },
+            period: cdk.Duration.minutes(1),
+            label: 'API GW 5XX Rate (%)',
+        });
+
+        const apiGw5xxAlarm = new cloudwatch.Alarm(this, 'ApiGw5xxAlarm', {
+            alarmName: `api-gateway-5xx-rate-${envName}`,
+            alarmDescription: `API Gateway 5XX error rate exceeded 1%`,
+            metric: apiGw5xxRateMetric,
+            threshold: 1,
+            comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluationPeriods: 2,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        });
+
+        const apiGwLatencyMetric = new cloudwatch.Metric({
+            namespace: 'AWS/ApiGateway',
+            metricName: 'Latency',
+            dimensionsMap: { ApiId: this.httpApi.apiId },
+            period: cdk.Duration.minutes(1),
+            statistic: 'p99',
+        });
+
+        const apiGwLatencyAlarm = new cloudwatch.Alarm(this, 'ApiGwLatencyAlarm', {
+            alarmName: `api-gateway-latency-${envName}`,
+            alarmDescription: `API Gateway p99 latency exceeded 1000ms`,
+            metric: apiGwLatencyMetric,
+            threshold: 1000,
+            comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluationPeriods: 2,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        });
+
+        const apiGwTopic = sns.Topic.fromTopicArn(this, 'ApiGwAlarmTopic', alarmTopicArn);
+        const apiGwAction = new cloudwatchActions.SnsAction(apiGwTopic);
+        apiGw5xxAlarm.addAlarmAction(apiGwAction);
+        apiGwLatencyAlarm.addAlarmAction(apiGwAction);
 
         // -----------------------------------------------------------------------
         // 9. Cross-stack SSM parameter exports
@@ -398,6 +479,12 @@ export class OrderServiceStack extends cdk.Stack {
             value: this.orderLambda.functionName,
             description: 'Order Lambda function name',
             exportName: `OrderServiceStack-${envName}-OrderLambdaFunctionName`,
+        });
+
+        new cdk.CfnOutput(this, 'HttpApiId', {
+            value: this.httpApi.apiId,
+            description: 'HTTP API Gateway ID',
+            exportName: `OrderServiceStack-${envName}-HttpApiId`,
         });
     }
 }

@@ -8,6 +8,7 @@ import type { Construct } from 'constructs';
 
 import { TaggingAspect } from '../aspects/TaggingAspect';
 import { PowertoolsLambda } from '../constructs/PowertoolsLambda';
+import { StandardAlarms } from '../constructs/StandardAlarms';
 
 export interface HelpdeskStackProps extends cdk.StackProps {
     readonly envName: string;
@@ -78,6 +79,21 @@ export class HelpdeskStack extends cdk.Stack {
         nonIndiaOrderRule.addTarget(new targets.LambdaFunction(this.helpdeskLambda, {
             retryAttempts: 2, // Ensure it retries on failure
         }));
+
+        // 4.1 Helpdesk Alarms
+        const alarmTopicArn = `arn:aws:sns:${this.region}:${this.account}:alarm-topic-${envName}`;
+
+        new StandardAlarms(this, 'HelpdeskAlarms', {
+            lambdaFunction: this.helpdeskLambda,
+            serviceName: 'helpdesk-service',
+            envName,
+            errorRateThresholdPercent: 1,
+            // Disable throttle alarm for Helpdesk (US-5.1 didn't specify it, but StandardAlarms usually adds it)
+            // wait, US-5.1 tasks say: "Helpdesk Lambda: error rate > 1%"
+            // Since throttle is 0 by default, let's keep it to 0 or leave default? Let's just pass defaults or use high threshold.
+            throttleCountThreshold: 0,
+            alarmTopicArn,
+        });
 
         // 5. Tagging
         cdk.Aspects.of(this).add(

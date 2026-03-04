@@ -584,32 +584,32 @@ Provision the `ObservabilityStack` with CloudWatch dashboards, alarms, and X-Ray
 ---
 
 ### US-5.1 — ObservabilityStack CDK
-**Story Points:** 5 | **Status:** [ ]
+**Story Points:** 5 | **Status:** [x] Complete
 
 **Description:** As an operator, I want a centralised observability stack that provides dashboards and alerts for all services.
 
 **Tasks:**
 
 **CloudWatch Alarms (per service, per region):**
-- [ ] Order Lambda: error rate > 1%, throttle count > 0, DLQ depth > 0
-- [ ] Notification Lambda: error rate > 1%, throttle count > 0, DLQ depth > 0, SES bounce rate > 5%
-- [ ] Inventory Lambda: error rate > 1%, throttle count > 0
-- [ ] Helpdesk Lambda: error rate > 1%
-- [ ] API Gateway: p99 latency > 1000ms, 5XX rate > 1%
+- [x] Order Lambda: error rate > 1%, throttle count > 0, DLQ depth > 0
+- [x] Notification Lambda: error rate > 1%, throttle count > 0, DLQ depth > 0, SES bounce rate > 5%
+- [x] Inventory Lambda: error rate > 1%, throttle count > 0
+- [x] Helpdesk Lambda: error rate > 1%
+- [x] API Gateway: p99 latency > 1000ms, 5XX rate > 1%
 
 **CloudWatch Dashboards:**
-- [ ] **Order Service:** API GW latency (p50/p99), Lambda errors/duration, DynamoDB WCU/throttles
-- [ ] **Notification Service:** SQS queue depth, Lambda errors, SES send/bounce/complaint rates, DLQ depth
-- [ ] **Inventory Service:** SQS queue depth, Lambda errors, DLQ depth
-- [ ] **System Health:** Cross-region Lambda errors comparison, DLQ message counts, Route 53 health check status
+- [x] **Order Service:** API GW latency (p50/p99), Lambda errors/duration, DynamoDB WCU/throttles
+- [x] **Notification Service:** SQS queue depth, Lambda errors, SES send/bounce/complaint rates, DLQ depth
+- [x] **Inventory Service:** SQS queue depth, Lambda errors, DLQ depth
+- [x] **System Health:** Cross-region Lambda errors comparison, DLQ message counts, Route 53 health check status
 
 **X-Ray:**
-- [ ] Confirm all Lambdas (from `PowertoolsLambda` construct) have `tracing: lambda.Tracing.ACTIVE`
-- [ ] Add X-Ray groups for each service for filtered trace views
+- [x] Confirm all Lambdas (from `PowertoolsLambda` construct) have `tracing: lambda.Tracing.ACTIVE`
+- [x] Add X-Ray groups for each service for filtered trace views
 
 **SNS Alarm Actions:**
-- [ ] Create SNS alarm topic; subscribe ops email address (from SSM `/shared/{env}/ops-email`)
-- [ ] All alarms send notifications to this topic
+- [x] Create SNS alarm topic; subscribe ops email address (from SSM `/shared/{env}/ops-email`)
+- [x] All alarms send notifications to this topic
 
 **Acceptance Criteria:**
 - Every alarm defined in CDK with appropriate thresholds

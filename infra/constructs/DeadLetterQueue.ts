@@ -96,5 +96,13 @@ export class DeadLetterQueue extends cdk.Resource {
             evaluationPeriods: 1,
             treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
         });
+
+        if (props.alarmTopicArn) {
+            // Lazy load SNS and CloudWatchActions since they are heavy imports if unused
+            const sns = require('aws-cdk-lib/aws-sns');
+            const cwActions = require('aws-cdk-lib/aws-cloudwatch-actions');
+            const topic = sns.Topic.fromTopicArn(this, 'AlarmTopic', props.alarmTopicArn);
+            this.alarm.addAlarmAction(new cwActions.SnsAction(topic));
+        }
     }
 }

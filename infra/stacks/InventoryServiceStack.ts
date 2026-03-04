@@ -58,6 +58,8 @@ export class InventoryServiceStack extends cdk.Stack {
         );
 
         // 4. Standard Alarms
+        const alarmTopicArn = `arn:aws:sns:${this.region}:${this.account}:alarm-topic-${envName}`;
+
         new StandardAlarms(this, 'InventoryAlarms', {
             lambdaFunction: this.inventoryLambda,
             serviceName: 'inventory-service',
@@ -65,6 +67,7 @@ export class InventoryServiceStack extends cdk.Stack {
             dlq: inventoryDlq,
             errorRateThresholdPercent: 1,
             throttleCountThreshold: 0,
+            alarmTopicArn,
         });
 
         // 5. Tagging

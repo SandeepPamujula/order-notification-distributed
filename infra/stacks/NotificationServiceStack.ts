@@ -10,6 +10,9 @@ import type { Construct } from 'constructs';
 import { TaggingAspect } from '../aspects/TaggingAspect';
 import { PowertoolsLambda } from '../constructs/PowertoolsLambda';
 import { StandardAlarms } from '../constructs/StandardAlarms';
+import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
+import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as sns from 'aws-cdk-lib/aws-sns';
 
 export interface NotificationServiceStackProps extends cdk.StackProps {
     readonly envName: string;
@@ -117,6 +120,8 @@ export class NotificationServiceStack extends cdk.Stack {
         );
 
         // DLQ CloudWatch alarm is built into DeadLetterQueue, but we can also use StandardAlarms
+        const alarmTopicArn = `arn:aws:sns:${this.region}:${this.account}:alarm-topic-${envName}`;
+
         new StandardAlarms(this, 'NotificationAlarms', {
             lambdaFunction: this.notificationLambda,
             serviceName: 'notification-service',
@@ -124,7 +129,44 @@ export class NotificationServiceStack extends cdk.Stack {
             dlq: notificationDlq,
             errorRateThresholdPercent: 1,
             throttleCountThreshold: 0,
+            alarmTopicArn,
         });
+
+        // 5.1 SES Bounce Rate Alarm (> 5%)
+        const bounceMetric = new cloudwatch.Metric({
+            namespace: 'AWS/SES',
+            metricName: 'Bounce',
+            period: cdk.Duration.minutes(1),
+            statistic: 'Sum',
+        });
+        const sendMetric = new cloudwatch.Metric({
+            namespace: 'AWS/SES',
+            metricName: 'Send',
+            period: cdk.Duration.minutes(1),
+            statistic: 'Sum',
+        });
+        // We use a safe MathExpression to calculate the bounce rate. If no sends, returns 0.
+        const bounceRateMetric = new cloudwatch.MathExpression({
+            expression: 'IF(sends > 0, bounces / sends * 100, 0)',
+            usingMetrics: {
+                bounces: bounceMetric,
+                sends: sendMetric,
+            },
+            period: cdk.Duration.minutes(1),
+            label: 'SES Bounce Rate (%)',
+        });
+
+        const sesBounceAlarm = new cloudwatch.Alarm(this, 'SesBounceAlarm', {
+            alarmName: `ses-bounce-rate-${envName}`,
+            alarmDescription: `SES Bounce Rate exceeded 5%`,
+            metric: bounceRateMetric,
+            threshold: 5,
+            comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluationPeriods: 1,
+            treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+        });
+
+        sesBounceAlarm.addAlarmAction(new cloudwatchActions.SnsAction(sns.Topic.fromTopicArn(this, 'SesAlarmTopic', alarmTopicArn)));
 
         cdk.Aspects.of(this).add(
             new TaggingAspect({ env: envName, service: 'notification-service', owner }),

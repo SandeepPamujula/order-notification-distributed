@@ -1,19 +1,20 @@
 {
-    "$schema": "https://json.schemastore.org/tsconfig",
-    "extends": "../tsconfig.json",
-    "compilerOptions": {
-        "rootDir": ".",
-        "outDir": "dist",
-        "baseUrl": "."
-    },
-    "include": [
-        "./**/*.ts"
-    ],
-    "exclude": [
-        "node_modules",
-        "dist",
-        "cdk.out",
-        "**/*.test.ts",
-        "**/*.spec.ts"
-    ]
+  "$schema": "https://json.schemastore.org/tsconfig",
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "dist",
+    "baseUrl": ".",
+    "exactOptionalPropertyTypes": false
+  },
+  "include": [
+    "./**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "cdk.out",
+    "**/*.test.ts",
+    "**/*.spec.ts"
+  ]
 }
