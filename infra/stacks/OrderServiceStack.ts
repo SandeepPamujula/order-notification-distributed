@@ -297,10 +297,12 @@ export class OrderServiceStack extends cdk.Stack {
             this.orderLambda,
         );
 
-        // POST /orders — main order placement route
+        // ANY /orders — routes all methods to the Lambda so it can return
+        // structured 404 responses for unsupported methods (e.g. DELETE /orders).
+        // The Lambda handler itself only processes POST; others fall through to 404.
         this.httpApi.addRoutes({
             path: '/orders',
-            methods: [apigwv2.HttpMethod.POST],
+            methods: [apigwv2.HttpMethod.ANY],
             integration: orderLambdaIntegration,
         });
 
@@ -309,6 +311,15 @@ export class OrderServiceStack extends cdk.Stack {
         this.httpApi.addRoutes({
             path: '/health',
             methods: [apigwv2.HttpMethod.GET],
+            integration: orderLambdaIntegration,
+        });
+
+        // $default catch-all — routes any unmatched method/path to the Lambda
+        // so it can return a structured 404 JSON response with correlationId.
+        // Without this, API Gateway returns its own bare {"message":"Not Found"}.
+        this.httpApi.addRoutes({
+            path: '/{proxy+}',
+            methods: [apigwv2.HttpMethod.ANY],
             integration: orderLambdaIntegration,
         });
 
@@ -332,7 +343,7 @@ export class OrderServiceStack extends cdk.Stack {
         });
 
         const apiGw5xxRateMetric = new cloudwatch.MathExpression({
-            expression: 'errors / MAX([invocations, 1]) * 100',
+            expression: 'IF(invocations > 0, errors / invocations * 100, 0)',
             usingMetrics: {
                 errors: apiGw5xxMetric,
                 invocations: apiGwCountMetric,

@@ -5,7 +5,7 @@
     "description": "Order Service Lambda — accepts, validates, persists and fans-out order events",
     "main": "dist/handler.js",
     "scripts": {
-        "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/* --minify",
+        "build": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/* --minify --keep-names",
         "build:dev": "esbuild src/handler.ts --bundle --platform=node --target=node22 --outdir=dist --sourcemap --external:@aws-sdk/*",
         "type-check": "tsc --noEmit",
         "clean": "rimraf dist"

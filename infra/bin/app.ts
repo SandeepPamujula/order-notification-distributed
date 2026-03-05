@@ -59,7 +59,7 @@ const usEast1Env: cdk.Environment = {
 // Baseline / Shared Stack (primary region)
 // Provisions SSM parameters and tags all resources at App level.
 // ---------------------------------------------------------------------------
-new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
+const baselineStack = new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     primaryRegion: envConfig.region,
@@ -77,7 +77,7 @@ new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
 // (US-1.1) is deployed. Use placeholder values for `cdk diff` / `cdk synth`
 // during Milestone 0.
 // ---------------------------------------------------------------------------
-new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
+const sharedStack = new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
     env: usEast1Env,
     envName: envConfig.env,
     domainName: envConfig.domainName ?? 'spkumarorder.com',
@@ -100,7 +100,7 @@ new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
 // NOTE: The secondary region (us-east-1) OrderServiceStack is added in US-6.1
 //       (Multi-Region Deployment) along with DynamoDB Global Table replication.
 // ---------------------------------------------------------------------------
-new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
+const orderServiceStack = new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
@@ -111,45 +111,57 @@ new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
         orderLambdaReservedConcurrency: Number(app.node.tryGetContext('orderLambdaReservedConcurrency')),
     }),
 });
+orderServiceStack.addDependency(baselineStack);
 
 // ---------------------------------------------------------------------------
 // Notification Service Stack (primary region)
 // ---------------------------------------------------------------------------
-new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-${envName}`, {
+const notificationServiceStack = new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Notification Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
+notificationServiceStack.addDependency(orderServiceStack);
 
 // ---------------------------------------------------------------------------
 // Inventory Service Stack (primary region)
 // ---------------------------------------------------------------------------
-new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envName}`, {
+const inventoryServiceStack = new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Inventory Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
+inventoryServiceStack.addDependency(orderServiceStack);
 
 // ---------------------------------------------------------------------------
 // Helpdesk Service Stack (primary region)
 // ---------------------------------------------------------------------------
-new HelpdeskStack(app, `HelpdeskStack-${envConfig.region}-${envName}`, {
+const helpdeskStack = new HelpdeskStack(app, `HelpdeskStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Helpdesk Service — Phase 1 & 2 infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
+helpdeskStack.addDependency(orderServiceStack);
 
 // ---------------------------------------------------------------------------
 // Observability Stack (primary region)
+//
+// Depends on ALL four service stacks because it uses Fn.importValue to
+// reference their CloudFormation exports (Lambda function names, API ID, etc.)
 // ---------------------------------------------------------------------------
-new ObservabilityStack(app, `ObservabilityStack-${envConfig.region}-${envName}`, {
+const observabilityStack = new ObservabilityStack(app, `ObservabilityStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Observability Stack — Dashboards & Alerts (${envConfig.region}, ${envConfig.env})`,
 });
+observabilityStack.addDependency(orderServiceStack);
+observabilityStack.addDependency(notificationServiceStack);
+observabilityStack.addDependency(inventoryServiceStack);
+observabilityStack.addDependency(helpdeskStack);
+observabilityStack.addDependency(sharedStack);
 
 app.synth();

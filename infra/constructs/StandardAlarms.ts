@@ -97,10 +97,11 @@ export class StandardAlarms extends cdk.Resource {
 
         // -----------------------------------------------------------------------
         // Error-rate alarm
-        // Uses a MathExpression: errors / MAX(invocations, 1) * 100
+        // Uses a MathExpression: IF(invocations > 0, errors / invocations * 100, 0)
+        // Avoids division-by-zero when there are no invocations.
         // -----------------------------------------------------------------------
         const errorRateMetric = new cloudwatch.MathExpression({
-            expression: 'errors / MAX([invocations, 1]) * 100',
+            expression: 'IF(invocations > 0, errors / invocations * 100, 0)',
             usingMetrics: {
                 errors: lambdaFunction.metricErrors({
                     period: cdk.Duration.minutes(1),

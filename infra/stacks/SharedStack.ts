@@ -38,7 +38,7 @@ export interface SharedStackProps extends cdk.StackProps {
  * Shared infrastructure stack — deployed once to `us-east-1`.
  *
  * Responsibilities:
- * - Owns the Route 53 public hosted zone for `api.spkumarorder.com`.
+ * - Owns the Route 53 public hosted zone for `spkumarorder.com`.
  * - Provisions Route 53 HTTP health checks for both regional API Gateway
  *   `/health` endpoints (failure threshold: 3, interval: 30 s).
  * - Creates latency-based A-alias records pointing to each region's API GW,
@@ -80,15 +80,21 @@ export class SharedStack extends cdk.Stack {
             owner: _owner,
         } = props;
 
-        /** The `api.<domainName>` subdomain owed by this hosted zone. */
+        /** The `api.<domainName>` subdomain used for latency-based routing. */
         const apiSubdomain = `api.${domainName}`;
 
         // -----------------------------------------------------------------------
         // Route 53 public hosted zone
+        //
+        // The zone is created for the **parent domain** (e.g. spkumarorder.com)
+        // so that `api.spkumarorder.com` is a regular subdomain — NOT the zone
+        // apex.  DNS RFC 1034 forbids CNAME records at the zone apex, so hosting
+        // the zone at the parent domain avoids the CREATE_FAILED error:
+        //   "RRSet of type CNAME … is not permitted at apex in zone …"
         // -----------------------------------------------------------------------
         this.hostedZone = new route53.PublicHostedZone(this, 'HostedZone', {
-            zoneName: apiSubdomain,
-            comment: `Public hosted zone for ${apiSubdomain} — managed by SharedStack (${envName})`,
+            zoneName: domainName,
+            comment: `Public hosted zone for ${domainName} — managed by SharedStack (${envName})`,
         });
 
         // -----------------------------------------------------------------------

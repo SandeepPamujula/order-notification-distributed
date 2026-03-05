@@ -12,7 +12,7 @@
         "@aws-cdk/aws-s3:serverAccessLogsUseBucketPolicy": true,
         "@aws-cdk/aws-iam:minimizePolicies": true,
         "dev": {
-            "account": "123456789012",
+            "account": "663041820266",
             "region": "ap-south-1",
             "secondaryRegion": "us-east-1",
             "env": "dev",
