@@ -1,4 +1,4 @@
-# Distributed Order Notification System
+# Globally Distributed Order Notification System which is resilient and cost effective
 
 This project is a highly scalable, event-driven order and notification system built using Serverless technologies on AWS. It is designed to handle high-throughput order processing with built-in multi-region resilience.
 
