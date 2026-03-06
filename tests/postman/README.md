@@ -98,3 +98,97 @@ This enforces the acceptance criterion that correlation IDs flow from request to
 - **SQS polling** — Postman cannot poll SQS directly. The Jest integration tests (`npm run test:integration`) must be used to verify SNS → SQS fan-out.
 - **DynamoDB direct reads** — Postman tests the HTTP layer only. DynamoDB attribute verification is done in the Jest suite.
 - **EventBridge direct assertion** — Requires a catch-all SQS queue + `EB_CATCHALL_QUEUE_URL` env var (Jest). Postman uses the indirect 201 assertion.
+
+---
+
+# Multi-Region — Postman Integration Tests (US-6.1)
+
+> **User Story:** US-6.1 — Multi-Region CDK Deployment
+> **Collection file:** `multi-region-integration.postman_collection.json`
+> **Environment file:** `multi-region-dev.postman_environment.json`
+
+These tests verify the multi-region deployment using the Route 53 hosted zone (`api.spworks.click`), direct regional endpoints, cross-region DynamoDB Global Table replication, and region parity.
+
+---
+
+## Quick Start
+
+### 1. Get the Regional API URLs
+
+```bash
+# Primary region (ap-south-1)
+aws ssm get-parameter \
+  --name "/order-service/dev/api-gateway-url" \
+  --query "Parameter.Value" --output text \
+  --region ap-south-1
+
+# Secondary region (us-east-1)
+aws ssm get-parameter \
+  --name "/order-service/dev/api-gateway-url" \
+  --query "Parameter.Value" --output text \
+  --region us-east-1
+```
+
+### 2. Import into Postman (GUI)
+
+1. Open Postman → **Import** → drag-and-drop both multi-region `.json` files
+2. Select the **"Multi-Region — dev"** environment
+3. Update these environment variables:
+   - `HOSTED_ZONE_URL` → `https://api.spworks.click`
+   - `PRIMARY_BASE_URL` → `https://<primary-id>.execute-api.ap-south-1.amazonaws.com`
+   - `SECONDARY_BASE_URL` → `https://<secondary-id>.execute-api.us-east-1.amazonaws.com`
+4. Click **Run Collection** to execute all tests in order
+
+### 3. Run via Newman (CLI / CI)
+
+```bash
+newman run tests/postman/multi-region-integration.postman_collection.json \
+  --environment tests/postman/multi-region-dev.postman_environment.json \
+  --env-var HOSTED_ZONE_URL=https://api.spworks.click \
+  --env-var PRIMARY_BASE_URL=https://<PRIMARY_ID>.execute-api.ap-south-1.amazonaws.com \
+  --env-var SECONDARY_BASE_URL=https://<SECONDARY_ID>.execute-api.us-east-1.amazonaws.com \
+  --reporters cli,junit \
+  --reporter-junit-export newman-multi-region-report.xml
+```
+
+---
+
+## Multi-Region Test Folders
+
+| # | Folder | Tests | Description |
+|---|--------|-------|-------------|
+| 1 | Custom Domain Health Check | 2 | `GET api.spworks.click/health` → 200, TLS cert valid |
+| 2 | Custom Domain Order Placement | 2 | `POST api.spworks.click/orders` → 201 happy path, 400 validation |
+| 3 | Primary Region Direct (ap-south-1) | 2 | Direct health check + order placement against primary |
+| 4 | Secondary Region Direct (us-east-1) | 2 | Direct health check + order placement against secondary |
+| 5 | Cross-Region DynamoDB Replication | 2 | Write in primary, verify secondary is reachable, log CLI command for replication check |
+| 6 | Region Parity | 2 | Both regions return identical response shapes for health + errors |
+
+**Total: 12 tests**
+
+---
+
+## What the Multi-Region Tests Prove
+
+| Verification | How |
+|---|---|
+| **ACM certificate is valid** | TLS handshake succeeds on `https://api.spworks.click` |
+| **API Gateway Custom Domain** works | Health check via custom domain returns 200 |
+| **Route 53 latency routing** resolves | Custom domain response succeeds from any location |
+| **Both regions are independently healthy** | Direct health checks on both `execute-api` URLs |
+| **Both regions accept orders** | Direct `POST /orders` on both regional endpoints |
+| **DynamoDB Global Table replication** | Order written in `ap-south-1`, verifiable in `us-east-1` via CLI |
+| **Response parity** | Both regions return the same keys, error types, and shapes |
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|---|---|
+| `HOSTED_ZONE_URL` | `https://api.spworks.click` — Route 53 latency-routed URL |
+| `PRIMARY_BASE_URL` | Direct `execute-api` URL for `ap-south-1` |
+| `SECONDARY_BASE_URL` | Direct `execute-api` URL for `us-east-1` |
+| `DOMAIN_NAME` | `api.spworks.click` — used for explicit TLS test |
+| `DEPLOY_ENV` | `dev` — descriptive only |
+

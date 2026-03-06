@@ -69,7 +69,7 @@ export class ObservabilityStack extends cdk.Stack {
 
         // 4a. Order Service Dashboard
         const orderDashboard = new cloudwatch.Dashboard(this, 'OrderDashboard', {
-            dashboardName: `order-service-${envName}`,
+            dashboardName: `order-service-${this.region}-${envName}`,
         });
 
                 orderDashboard.addWidgets(
@@ -94,7 +94,7 @@ export class ObservabilityStack extends cdk.Stack {
 
         // 4b. Notification Service Dashboard
         const notificationDashboard = new cloudwatch.Dashboard(this, 'NotificationDashboard', {
-            dashboardName: `notification-service-${envName}`,
+            dashboardName: `notification-service-${this.region}-${envName}`,
         });
 
                 notificationDashboard.addWidgets(
@@ -119,7 +119,7 @@ export class ObservabilityStack extends cdk.Stack {
 
         // 4c. Inventory Service Dashboard
         const inventoryDashboard = new cloudwatch.Dashboard(this, 'InventoryDashboard', {
-            dashboardName: `inventory-service-${envName}`,
+            dashboardName: `inventory-service-${this.region}-${envName}`,
         }) as any;
 
                 inventoryDashboard.addWidgets(
@@ -136,7 +136,7 @@ export class ObservabilityStack extends cdk.Stack {
 
         // 4d. System Health Dashboard
         const systemDashboard = new cloudwatch.Dashboard(this, 'SystemHealthDashboard', {
-            dashboardName: `system-health-${envName}`,
+            dashboardName: `system-health-${this.region}-${envName}`,
         });
 
         // Try getting primary health check ID from us-east-1 (SharedStack)

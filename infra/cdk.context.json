@@ -1,0 +1,10 @@
+{
+  "hosted-zone:account=663041820266:domainName=spworks.click:region=us-east-1": {
+    "Id": "/hostedzone/Z00228121OP9NDNXE78G8",
+    "Name": "spworks.click."
+  },
+  "hosted-zone:account=663041820266:domainName=spworks.click:region=ap-south-1": {
+    "Id": "/hostedzone/Z00228121OP9NDNXE78G8",
+    "Name": "spworks.click."
+  }
+}

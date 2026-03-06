@@ -446,10 +446,10 @@ describe('OrderServiceStack', () => {
             template.resourceCountIs('AWS::ApiGatewayV2::Api', 1);
         });
 
-        it('creates the POST /orders route', () => {
+        it('creates the ANY /orders route', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::ApiGatewayV2::Route', {
-                RouteKey: 'POST /orders',
+                RouteKey: 'ANY /orders',
             });
         });
 

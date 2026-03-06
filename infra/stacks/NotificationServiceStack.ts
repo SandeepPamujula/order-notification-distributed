@@ -18,44 +18,65 @@ export interface NotificationServiceStackProps extends cdk.StackProps {
     readonly envName: string;
     readonly owner: string;
     readonly lambdaCode?: lambda.Code;
+    /**
+     * The region(s) for DynamoDB Global Table replication.
+     * Each region listed (other than the stack's own region) will be added
+     * as a replica. Pass an empty array or undefined to skip replication.
+     */
+    readonly replicationRegions?: string[];
+    /** Whether this stack is being deployed in the secondary region (imports replicated DynamoDB tables) */
+    readonly isSecondaryRegion?: boolean;
 }
 
 /**
  * Notification Service CDK stack — Phase 1.
  */
 export class NotificationServiceStack extends cdk.Stack {
-    public readonly notificationsTable: dynamodb.Table;
+    public readonly notificationsTable: dynamodb.ITable;
     public readonly notificationLambda: lambda.Function;
 
     constructor(scope: Construct, id: string, props: NotificationServiceStackProps) {
         super(scope, id, props);
 
-        const { envName, owner, lambdaCode } = props;
+        const { envName, owner, lambdaCode, replicationRegions } = props;
 
-        // 1. DynamoDB Notifications table
-        this.notificationsTable = new dynamodb.Table(this, 'NotificationsTable', {
-            tableName: `notifications-${envName}`,
-            partitionKey: { name: 'notificationId', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            timeToLiveAttribute: 'ttl',
-            removalPolicy: envName === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-            pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-        });
+        // 1. DynamoDB Notifications table (Global Table — US-6.1)
+        const tableName = `notifications-${envName}`;
 
-        this.notificationsTable.addGlobalSecondaryIndex({
-            indexName: 'GSI-orderId',
-            partitionKey: { name: 'orderId', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-            projectionType: dynamodb.ProjectionType.ALL,
-        });
+        if (props.isSecondaryRegion) {
+            this.notificationsTable = dynamodb.Table.fromTableName(this, 'NotificationsTable', tableName);
+        } else {
+            // Filter out this stack's own region from the replication list.
+            // Use a conditional spread to satisfy exactOptionalPropertyTypes.
+            const notificationsReplicaRegions = replicationRegions?.filter(r => r !== this.region);
+            const table = new dynamodb.Table(this, 'NotificationsTable', {
+                tableName,
+                partitionKey: { name: 'notificationId', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+                billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+                timeToLiveAttribute: 'ttl',
+                removalPolicy: envName === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+                pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+                // DynamoDB Global Table replication (US-6.1)
+                ...(notificationsReplicaRegions && notificationsReplicaRegions.length > 0 && { replicationRegions: notificationsReplicaRegions }),
+            });
 
-        this.notificationsTable.addGlobalSecondaryIndex({
-            indexName: 'GSI-status-type',
-            partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'type', type: dynamodb.AttributeType.STRING },
-            projectionType: dynamodb.ProjectionType.ALL,
-        });
+            table.addGlobalSecondaryIndex({
+                indexName: 'GSI-orderId',
+                partitionKey: { name: 'orderId', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+                projectionType: dynamodb.ProjectionType.ALL,
+            });
+
+            table.addGlobalSecondaryIndex({
+                indexName: 'GSI-status-type',
+                partitionKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'type', type: dynamodb.AttributeType.STRING },
+                projectionType: dynamodb.ProjectionType.ALL,
+            });
+
+            this.notificationsTable = table;
+        }
 
         // 2. Import SQS queues from SSM
         const notificationQueueArn = ssm.StringParameter.valueForStringParameter(
@@ -74,13 +95,13 @@ export class NotificationServiceStack extends cdk.Stack {
         // 3. Store SES configuration in SSM
         new ssm.StringParameter(this, 'SesFromAddressParam', {
             parameterName: `/notification-service/${envName}/ses-from-address`,
-            stringValue: `noreply@spkumarorder.com`,
+            stringValue: `noreply@spworks.click`,
             description: 'SES From address for notifications',
         });
 
         new ssm.StringParameter(this, 'SesReplyToAddressParam', {
             parameterName: `/notification-service/${envName}/ses-reply-to-address`,
-            stringValue: `helpdesk@spkumarorder.com`,
+            stringValue: `helpdesk@spworks.click`,
             description: 'SES Reply-To address for notifications',
         });
 
@@ -91,8 +112,8 @@ export class NotificationServiceStack extends cdk.Stack {
             code: lambdaCode ?? lambda.Code.fromAsset('../src/notification-service/dist'),
             environment: {
                 NOTIFICATIONS_TABLE_NAME: this.notificationsTable.tableName,
-                SES_FROM_ADDRESS: `noreply@spkumarorder.com`,
-                SES_REPLY_TO_ADDRESS: `helpdesk@spkumarorder.com`,
+                SES_FROM_ADDRESS: `noreply@spworks.click`,
+                SES_REPLY_TO_ADDRESS: `helpdesk@spworks.click`,
             },
         });
 

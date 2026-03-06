@@ -63,8 +63,8 @@ describe('NotificationServiceStack', () => {
             Environment: {
                 Variables: {
                     NOTIFICATIONS_TABLE_NAME: Match.anyValue(),
-                    SES_FROM_ADDRESS: 'noreply@spkumarorder.com',
-                    SES_REPLY_TO_ADDRESS: 'helpdesk@spkumarorder.com',
+                    SES_FROM_ADDRESS: 'noreply@spworks.click',
+                    SES_REPLY_TO_ADDRESS: 'helpdesk@spworks.click',
                     POWERTOOLS_SERVICE_NAME: 'notification-service',
                 },
             },
@@ -75,12 +75,12 @@ describe('NotificationServiceStack', () => {
         template.hasResourceProperties('AWS::SSM::Parameter', {
             Name: `/notification-service/${ENV_NAME}/ses-from-address`,
             Type: 'String',
-            Value: 'noreply@spkumarorder.com',
+            Value: 'noreply@spworks.click',
         });
         template.hasResourceProperties('AWS::SSM::Parameter', {
             Name: `/notification-service/${ENV_NAME}/ses-reply-to-address`,
             Type: 'String',
-            Value: 'helpdesk@spkumarorder.com',
+            Value: 'helpdesk@spworks.click',
         });
     });
 

@@ -9,7 +9,7 @@ import { SharedStack } from '../../stacks/SharedStack';
 
 const DEFAULT_PROPS = {
     envName: 'dev',
-    domainName: 'spkumarorder.com',
+    domainName: 'spworks.click',
     primaryApiGatewayDomainName: 'abc123.execute-api.ap-south-1.amazonaws.com',
     secondaryApiGatewayDomainName: 'xyz789.execute-api.us-east-1.amazonaws.com',
     owner: 'platform-team',
@@ -46,10 +46,10 @@ describe('SharedStack', () => {
     // Route 53 hosted zone
     // -------------------------------------------------------------------------
     describe('Route 53 hosted zone', () => {
-        it('creates a public hosted zone for api.spkumarorder.com', () => {
+        it('creates a public hosted zone for spworks.click', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::Route53::HostedZone', {
-                Name: 'api.spkumarorder.com.',
+                Name: 'spworks.click.',
             });
         });
 
@@ -58,10 +58,10 @@ describe('SharedStack', () => {
             template.resourceCountIs('AWS::Route53::HostedZone', 1);
         });
 
-        it('uses the correct domainName to derive the api subdomain', () => {
+        it('uses the correct domainName for the hosted zone', () => {
             const { template } = buildStack({ domainName: 'example.io' });
             template.hasResourceProperties('AWS::Route53::HostedZone', {
-                Name: 'api.example.io.',
+                Name: 'example.io.',
             });
         });
     });
@@ -177,11 +177,11 @@ describe('SharedStack', () => {
         it('points records at the api subdomain', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::Route53::RecordSet', {
-                Name: 'api.spkumarorder.com.',
+                Name: 'api.spworks.click.',
                 Region: 'ap-south-1',
             });
             template.hasResourceProperties('AWS::Route53::RecordSet', {
-                Name: 'api.spkumarorder.com.',
+                Name: 'api.spworks.click.',
                 Region: 'us-east-1',
             });
         });
@@ -227,7 +227,7 @@ describe('SharedStack', () => {
             const { template } = buildStack();
             template.hasResourceProperties('AWS::SSM::Parameter', {
                 Name: '/shared/dev/api-subdomain',
-                Value: 'api.spkumarorder.com',
+                Value: 'api.spworks.click',
                 Type: 'String',
             });
         });
@@ -275,7 +275,7 @@ describe('SharedStack', () => {
         it('has an ApiSubdomain output with the correct value', () => {
             const { template } = buildStack();
             template.hasOutput('ApiSubdomain', {
-                Value: 'api.spkumarorder.com',
+                Value: 'api.spworks.click',
             });
         });
 

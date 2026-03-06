@@ -16,21 +16,26 @@
             "region": "ap-south-1",
             "secondaryRegion": "us-east-1",
             "env": "dev",
-            "owner": "platform-team"
+            "owner": "platform-team",
+            "domainName": "spworks.click",
+            "primaryApiGatewayDomainName": "d-mr5ps2kzaa.execute-api.ap-south-1.amazonaws.com",
+            "secondaryApiGatewayDomainName": "d-p1ml1lnq3b.execute-api.us-east-1.amazonaws.com"
         },
         "staging": {
             "account": "123456789012",
             "region": "ap-south-1",
             "secondaryRegion": "us-east-1",
             "env": "staging",
-            "owner": "platform-team"
+            "owner": "platform-team",
+            "domainName": "spworks.click"
         },
         "prod": {
             "account": "123456789012",
             "region": "ap-south-1",
             "secondaryRegion": "us-east-1",
             "env": "prod",
-            "owner": "platform-team"
+            "owner": "platform-team",
+            "domainName": "spworks.click"
         }
     },
     "watch": {

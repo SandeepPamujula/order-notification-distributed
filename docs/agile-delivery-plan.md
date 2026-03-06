@@ -98,13 +98,13 @@ Bootstrap the monorepo, CDK app structure, shared tooling, and CI/CD pipeline sk
 
 **Tasks:**
 - [x] Create `infra/stacks/SharedStack.ts` (deployed to `us-east-1` — Route 53 is global, hosted zones must be in `us-east-1`)
-- [x] Define hosted zone for `api.spkumarorder.com`
+- [x] Define hosted zone for `api.spworks.click`
 - [x] Define latency-based routing records pointing to API Gateway endpoints in `ap-south-1` and `us-east-1`
 - [x] Define Route 53 health checks for both regions (HTTP path: `/health`, failure threshold: 3)
 - [x] Export hosted zone ARN and health check IDs as SSM parameters for use by regional stacks
 - [x] Write `docs/adr/ADR-002-global-routing-strategy.md`
 
-> **Note:** In `dev`, Route 53 latency records point to raw `execute-api` URLs (placeholder values until `OrderServiceStack` is deployed). ACM certificates and API Gateway Custom Domain Names for `api.spkumarorder.com` are deferred to **US-6.1** (Multi-Region Deployment).
+> **Note:** In `dev`, Route 53 latency records point to raw `execute-api` URLs (placeholder values until `OrderServiceStack` is deployed). ACM certificates and API Gateway Custom Domain Names for `api.spworks.click` are deferred to **US-6.1** (Multi-Region Deployment).
 
 **Acceptance Criteria:**
 - `cdk diff` for `SharedStack` shows only expected resources
@@ -621,30 +621,30 @@ Provision the `ObservabilityStack` with CloudWatch dashboards, alarms, and X-Ray
 ## Milestone 6 — Multi-Region Deployment
 
 ### Goals
-Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Table replication enabled. Provision ACM certificates and API Gateway Custom Domain Names for `api.spkumarorder.com` (deferred from M0).
+Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Table replication enabled. Provision ACM certificates and API Gateway Custom Domain Names for `api.spworks.click` (deferred from M0).
 
 ---
 
 ### US-6.1 — Multi-Region CDK Deployment
-**Story Points:** 8 | **Status:** [ ]
+**Story Points:** 8 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Update `infra/bin/app.ts` to instantiate all service stacks for both regions:
+- [x] Update `infra/bin/app.ts` to instantiate all service stacks for both regions:
   ```
   new OrderServiceStack(app, 'OrderServiceStack-ap-south-1-dev', { env: { region: 'ap-south-1' }, ... })
   new OrderServiceStack(app, 'OrderServiceStack-us-east-1-dev', { env: { region: 'us-east-1' }, ... })
   ```
-- [ ] Configure DynamoDB Global Tables replication: Orders table replicated to both regions; Notifications table replicated to both regions
-- [ ] Provision ACM certificates in each region for `api.spkumarorder.com` (DNS-validated via `SharedStack` hosted zone)
-- [ ] Configure API Gateway Custom Domain Names in each regional `OrderServiceStack`, linked to the ACM certificates
-- [ ] Update `SharedStack` Route 53 latency records: swap placeholder `execute-api` URLs with real custom domain regional endpoints (exported via SSM by `OrderServiceStack`)
-- [ ] Write `docs/adr/ADR-007-multi-region-deployment.md`
+- [x] Configure DynamoDB Global Tables replication: Orders table replicated to both regions; Notifications table replicated to both regions
+- [x] Provision ACM certificates in each region for `api.spworks.click` (DNS-validated via `SharedStack` hosted zone)
+- [x] Configure API Gateway Custom Domain Names in each regional `OrderServiceStack`, linked to the ACM certificates
+- [x] Update `SharedStack` Route 53 latency records: swap placeholder `execute-api` URLs with real custom domain regional endpoints (exported via SSM by `OrderServiceStack`)
+- [x] Write `docs/adr/ADR-007-multi-region-deployment.md`
 
 > **Note:** `SharedStack` (Route 53 hosted zone, health checks, latency routing) was already deployed in US-0.3. This story updates the latency records from raw `execute-api` URLs to proper custom domain endpoints.
 
 **Acceptance Criteria:**
-- `POST api.spkumarorder.com/orders` from an India-like IP resolves to `ap-south-1`
-- `POST api.spkumarorder.com/orders` from a US-like IP resolves to `us-east-1`
+- `POST api.spworks.click/orders` from an India-like IP resolves to `ap-south-1`
+- `POST api.spworks.click/orders` from a US-like IP resolves to `us-east-1`
 - Writing an order in `ap-south-1` → item appears in `us-east-1` DynamoDB replica within ~5 seconds
 - Simulating `ap-south-1` health check failure → Route 53 routes to `us-east-1`
 - ACM certificates are valid and attached to API Gateway Custom Domain Names in both regions

@@ -10,6 +10,16 @@ import { OrderServiceStack } from '../stacks/OrderServiceStack';
 import { SharedStack } from '../stacks/SharedStack';
 import { HelpdeskStack } from '../stacks/HelpdeskStack';
 import { ObservabilityStack } from '../stacks/ObservabilityStack';
+
+// ---------------------------------------------------------------------------
+// CDK App — Multi-Region Deployment (US-6.1)
+//
+// Deploys all service stacks to both ap-south-1 (primary) and us-east-1
+// (secondary) regions. DynamoDB Global Tables replicate data across both
+// regions. ACM certificates and API Gateway Custom Domain Names are
+// provisioned per-region for `api.<domainName>`.
+//
+// Usage:
 //   cdk synth --context env=dev
 //   cdk deploy --all --context env=dev --require-approval never
 //   cdk diff --context env=staging
@@ -49,38 +59,55 @@ const primaryEnv: cdk.Environment = {
     region: envConfig.region,
 };
 
+const secondaryEnv: cdk.Environment = {
+    account: envConfig.account,
+    region: envConfig.secondaryRegion,
+};
+
 /** us-east-1 environment — SharedStack must be deployed here (Route 53 requirement). */
 const usEast1Env: cdk.Environment = {
     account: envConfig.account,
     region: 'us-east-1',
 };
 
+/** All regions for DynamoDB Global Table replication. */
+const allRegions = [envConfig.region, envConfig.secondaryRegion];
+
+/** Domain name for ACM certificates and API Gateway Custom Domain Names. */
+const domainName = envConfig.domainName ?? 'spworks.click';
+
 // ---------------------------------------------------------------------------
-// Baseline / Shared Stack (primary region)
-// Provisions SSM parameters and tags all resources at App level.
+// Baseline / Shared Stacks
 // ---------------------------------------------------------------------------
-const baselineStack = new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
+
+// Primary region baseline
+const baselineStackPrimary = new BaselineStack(app, `BaselineStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     primaryRegion: envConfig.region,
     secondaryRegion: envConfig.secondaryRegion,
     owner: envConfig.owner,
-    description: `Baseline shared parameters and tagging — ${envConfig.env}`,
+    description: `Baseline shared parameters and tagging — ${envConfig.env} (${envConfig.region})`,
 });
 
-// ---------------------------------------------------------------------------
-// Shared Stack (us-east-1)
-// Route 53 hosted zone, health checks, and latency-based routing.
-//
-// NOTE: `primaryApiGatewayDomainName` and `secondaryApiGatewayDomainName`
-// will be replaced with real API Gateway domain names once OrderServiceStack
-// (US-1.1) is deployed. Use placeholder values for `cdk diff` / `cdk synth`
-// during Milestone 0.
-// ---------------------------------------------------------------------------
+// Secondary region baseline
+const baselineStackSecondary = new BaselineStack(app, `BaselineStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    primaryRegion: envConfig.region,
+    secondaryRegion: envConfig.secondaryRegion,
+    owner: envConfig.owner,
+    description: `Baseline shared parameters and tagging — ${envConfig.env} (${envConfig.secondaryRegion})`,
+});
+
+// SharedStack (us-east-1) — Route 53 hosted zone, health checks, latency routing
+// NOTE: primaryApiGatewayDomainName and secondaryApiGatewayDomainName are
+// overridden after OrderServiceStacks are deployed. Use placeholder values
+// for initial cdk synth / cdk diff.
 const sharedStack = new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
     env: usEast1Env,
     envName: envConfig.env,
-    domainName: envConfig.domainName ?? 'spkumarorder.com',
+    domainName,
     primaryApiGatewayDomainName:
         envConfig.primaryApiGatewayDomainName ??
         `placeholder-primary.execute-api.${envConfig.region}.amazonaws.com`,
@@ -92,76 +119,135 @@ const sharedStack = new SharedStack(app, `SharedStack-us-east-1-${envName}`, {
 });
 
 // ---------------------------------------------------------------------------
-// Order Service Stack (primary region — ap-south-1)
+// Order Service Stacks — deployed to BOTH regions (US-6.1)
 //
-// Phase 1: DynamoDB Orders table, SNS fan-out, SQS queues, HTTP API Gateway,
-//          EventBridge custom bus, Order Lambda.
-//
-// NOTE: The secondary region (us-east-1) OrderServiceStack is added in US-6.1
-//       (Multi-Region Deployment) along with DynamoDB Global Table replication.
+// - DynamoDB Global Table replication enabled across both regions
+// - ACM certificate + API Gateway Custom Domain Name per region
 // ---------------------------------------------------------------------------
-const orderServiceStack = new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
+
+const orderServiceStackPrimary = new OrderServiceStack(app, `OrderServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
-    description: `Order Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
-    // Reserved concurrency is left undefined for dev; set via CDK context for staging/prod.
-    // Example: --context orderLambdaReservedConcurrency=2000
+    domainName,
+    replicationRegions: allRegions,
+    description: `Order Service — infrastructure (${envConfig.region}, ${envConfig.env})`,
     ...(app.node.tryGetContext('orderLambdaReservedConcurrency') !== undefined && {
         orderLambdaReservedConcurrency: Number(app.node.tryGetContext('orderLambdaReservedConcurrency')),
     }),
 });
-orderServiceStack.addDependency(baselineStack);
+orderServiceStackPrimary.addDependency(baselineStackPrimary);
+
+const orderServiceStackSecondary = new OrderServiceStack(app, `OrderServiceStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    domainName,
+    isSecondaryRegion: true,
+    // Only the primary stack creates replicas; secondary references the same Global Table.
+    // Passing replicationRegions only on the primary stack avoids conflicting replica creation.
+    description: `Order Service — infrastructure (${envConfig.secondaryRegion}, ${envConfig.env})`,
+    ...(app.node.tryGetContext('orderLambdaReservedConcurrency') !== undefined && {
+        orderLambdaReservedConcurrency: Number(app.node.tryGetContext('orderLambdaReservedConcurrency')),
+    }),
+});
+orderServiceStackSecondary.addDependency(baselineStackSecondary);
+// Secondary depends on primary because the Global Table is created in primary
+orderServiceStackSecondary.addDependency(orderServiceStackPrimary);
 
 // ---------------------------------------------------------------------------
-// Notification Service Stack (primary region)
+// Notification Service Stacks — deployed to BOTH regions (US-6.1)
 // ---------------------------------------------------------------------------
-const notificationServiceStack = new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-${envName}`, {
+
+const notificationServiceStackPrimary = new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
-    description: `Notification Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
+    replicationRegions: allRegions,
+    description: `Notification Service — infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
-notificationServiceStack.addDependency(orderServiceStack);
+notificationServiceStackPrimary.addDependency(orderServiceStackPrimary);
+
+const notificationServiceStackSecondary = new NotificationServiceStack(app, `NotificationServiceStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    isSecondaryRegion: true,
+    // Only primary creates replicas to avoid conflicting Global Table creation
+    description: `Notification Service — infrastructure (${envConfig.secondaryRegion}, ${envConfig.env})`,
+});
+notificationServiceStackSecondary.addDependency(orderServiceStackSecondary);
+notificationServiceStackSecondary.addDependency(notificationServiceStackPrimary);
 
 // ---------------------------------------------------------------------------
-// Inventory Service Stack (primary region)
+// Inventory Service Stacks — deployed to BOTH regions (US-6.1)
 // ---------------------------------------------------------------------------
-const inventoryServiceStack = new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envName}`, {
+
+const inventoryServiceStackPrimary = new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
-    description: `Inventory Service — Phase 1 infrastructure (${envConfig.region}, ${envConfig.env})`,
+    description: `Inventory Service — infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
-inventoryServiceStack.addDependency(orderServiceStack);
+inventoryServiceStackPrimary.addDependency(orderServiceStackPrimary);
+
+const inventoryServiceStackSecondary = new InventoryServiceStack(app, `InventoryServiceStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Inventory Service — infrastructure (${envConfig.secondaryRegion}, ${envConfig.env})`,
+});
+inventoryServiceStackSecondary.addDependency(orderServiceStackSecondary);
 
 // ---------------------------------------------------------------------------
-// Helpdesk Service Stack (primary region)
+// Helpdesk Service Stacks — deployed to BOTH regions (US-6.1)
 // ---------------------------------------------------------------------------
-const helpdeskStack = new HelpdeskStack(app, `HelpdeskStack-${envConfig.region}-${envName}`, {
+
+const helpdeskStackPrimary = new HelpdeskStack(app, `HelpdeskStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
-    description: `Helpdesk Service — Phase 1 & 2 infrastructure (${envConfig.region}, ${envConfig.env})`,
+    description: `Helpdesk Service — infrastructure (${envConfig.region}, ${envConfig.env})`,
 });
-helpdeskStack.addDependency(orderServiceStack);
+helpdeskStackPrimary.addDependency(orderServiceStackPrimary);
+
+const helpdeskStackSecondary = new HelpdeskStack(app, `HelpdeskStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Helpdesk Service — infrastructure (${envConfig.secondaryRegion}, ${envConfig.env})`,
+});
+helpdeskStackSecondary.addDependency(orderServiceStackSecondary);
 
 // ---------------------------------------------------------------------------
-// Observability Stack (primary region)
+// Observability Stacks — deployed to BOTH regions (US-6.1)
 //
-// Depends on ALL four service stacks because it uses Fn.importValue to
-// reference their CloudFormation exports (Lambda function names, API ID, etc.)
+// Depends on ALL four service stacks in the same region because it uses
+// Fn.importValue to reference their CloudFormation exports.
 // ---------------------------------------------------------------------------
-const observabilityStack = new ObservabilityStack(app, `ObservabilityStack-${envConfig.region}-${envName}`, {
+
+const observabilityStackPrimary = new ObservabilityStack(app, `ObservabilityStack-${envConfig.region}-${envName}`, {
     env: primaryEnv,
     envName: envConfig.env,
     owner: envConfig.owner,
     description: `Observability Stack — Dashboards & Alerts (${envConfig.region}, ${envConfig.env})`,
 });
-observabilityStack.addDependency(orderServiceStack);
-observabilityStack.addDependency(notificationServiceStack);
-observabilityStack.addDependency(inventoryServiceStack);
-observabilityStack.addDependency(helpdeskStack);
-observabilityStack.addDependency(sharedStack);
+observabilityStackPrimary.addDependency(orderServiceStackPrimary);
+observabilityStackPrimary.addDependency(notificationServiceStackPrimary);
+observabilityStackPrimary.addDependency(inventoryServiceStackPrimary);
+observabilityStackPrimary.addDependency(helpdeskStackPrimary);
+observabilityStackPrimary.addDependency(sharedStack);
+
+const observabilityStackSecondary = new ObservabilityStack(app, `ObservabilityStack-${envConfig.secondaryRegion}-${envName}`, {
+    env: secondaryEnv,
+    envName: envConfig.env,
+    owner: envConfig.owner,
+    description: `Observability Stack — Dashboards & Alerts (${envConfig.secondaryRegion}, ${envConfig.env})`,
+});
+observabilityStackSecondary.addDependency(orderServiceStackSecondary);
+observabilityStackSecondary.addDependency(notificationServiceStackSecondary);
+observabilityStackSecondary.addDependency(inventoryServiceStackSecondary);
+observabilityStackSecondary.addDependency(helpdeskStackSecondary);
+observabilityStackSecondary.addDependency(sharedStack);
 
 app.synth();

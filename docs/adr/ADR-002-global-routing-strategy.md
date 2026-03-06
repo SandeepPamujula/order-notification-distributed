@@ -17,7 +17,7 @@ The Order Notification Distributed System must serve `POST /orders` globally wit
 - **Automatic region failover** (no manual intervention when a region goes down)
 - **Multi-region active-active** deployment in `ap-south-1` (Mumbai) and `us-east-1` (N. Virginia)
 
-Users are expected to originate from both India-proximate and US-proximate locations. The public API must be reachable at `api.spkumarorder.com`.
+Users are expected to originate from both India-proximate and US-proximate locations. The public API must be reachable at `api.spworks.click`.
 
 ---
 
@@ -31,7 +31,7 @@ We will use **AWS Route 53 latency-based routing** combined with **Route 53 HTTP
 ### Architecture Summary
 
 ```
-api.spkumarorder.com  (Route 53 public hosted zone)
+api.spworks.click  (Route 53 public hosted zone)
 ├── CNAME  ap-south-1  (Latency record, Region=ap-south-1, SetIdentifier=primary)
 │           └── HealthCheck → GET https://<apigw-ap-south-1>/health (HTTPS, threshold=3)
 └── CNAME  us-east-1   (Latency record, Region=us-east-1, SetIdentifier=secondary)
@@ -68,7 +68,7 @@ The following parameters are written to AWS Systems Manager Parameter Store by `
 | `/shared/{env}/hosted-zone-arn`        | Route 53 hosted zone ARN           |
 | `/shared/{env}/primary-health-check-id` | Health check ID for ap-south-1    |
 | `/shared/{env}/secondary-health-check-id` | Health check ID for us-east-1  |
-| `/shared/{env}/api-subdomain`          | `api.spkumarorder.com`                  |
+| `/shared/{env}/api-subdomain`          | `api.spworks.click`                  |
 
 Regional stacks read these parameters at synth-time via `StringParameter.valueForStringParameter()` to avoid hard CloudFormation cross-stack references (which create tight coupling and complicate updates).
 
@@ -122,20 +122,20 @@ Regional stacks read these parameters at synth-time via `StringParameter.valueFo
 
 1. The `/health` route is provisioned by `OrderServiceStack` (US-1.1) on each regional API Gateway. It returns `200 OK` with no authentication.
 2. The `SharedStack` must be deployed **before** `OrderServiceStack` in any CI/CD pipeline so that SSM parameters are available to import.
-3. After deployment, the Route 53 NS records output by `SharedStack` (`NameServers` CFn output) must be added to the domain registrar (e.g., Route 53 domains, GoDaddy) as NS records for the `api.spkumarorder.com` subdomain.
+3. After deployment, the Route 53 NS records output by `SharedStack` (`NameServers` CFn output) must be added to the domain registrar (e.g., Route 53 domains, GoDaddy) as NS records for the `api.spworks.click` subdomain.
 4. Route 53 resolver tests and `dig` queries should be run against the deployed hosted zone per the US-0.3 acceptance criteria.
 
 ### Verification commands (post-deploy)
 
 ```bash
 # Query the hosted zone name servers
-dig NS api.spkumarorder.com
+dig NS api.spworks.click
 
 # Query latency of the primary record (from ap-south-1 vicinity)
-dig CNAME api.spkumarorder.com
+dig CNAME api.spworks.click
 
 # Simulate failover: take down the /health endpoint in ap-south-1, wait ~90s, then:
-dig CNAME api.spkumarorder.com  # should now return us-east-1 API GW
+dig CNAME api.spworks.click  # should now return us-east-1 API GW
 ```
 
 ---

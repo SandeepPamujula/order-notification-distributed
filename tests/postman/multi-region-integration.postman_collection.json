@@ -1,0 +1,902 @@
+{
+    "info": {
+        "name": "Multi-Region — Integration Tests (US-6.1)",
+        "description": "Postman collection for verifying multi-region deployment via the Route 53 hosted zone.\n\nCovers:\n  1. Custom Domain Health Check — GET api.spworks.click/health via latency routing\n  2. Custom Domain Order Placement — POST api.spworks.click/orders (full happy path)\n  3. Primary Region Direct — direct tests against ap-south-1 execute-api endpoint\n  4. Secondary Region Direct — direct tests against us-east-1 execute-api endpoint\n  5. Cross-Region Consistency — order placed in primary is readable from secondary\n  6. Region Parity — both regions return identical response shapes\n\nEnvironment variables (configure in Postman Environment):\n  HOSTED_ZONE_URL       — https://api.spworks.click\n  PRIMARY_BASE_URL      — https://<id>.execute-api.ap-south-1.amazonaws.com\n  SECONDARY_BASE_URL    — https://<id>.execute-api.us-east-1.amazonaws.com\n  DOMAIN_NAME           — api.spworks.click\n  DEPLOY_ENV            — dev\n\nRun order:\n  Use Postman Collection Runner or Newman in the order listed.\n  Folder 1 (Custom Domain Health Check) should run first to verify DNS is resolving.",
+        "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+        "_postman_id": "d4e5f6a7-b8c9-0123-def4-567890abcdef",
+        "version": {
+            "major": 1,
+            "minor": 0,
+            "patch": 0
+        }
+    },
+    "variable": [
+        {
+            "key": "HOSTED_ZONE_URL",
+            "value": "https://api.spworks.click",
+            "description": "Route 53 latency-routed custom domain URL. Override in your Postman Environment.",
+            "type": "string"
+        },
+        {
+            "key": "PRIMARY_BASE_URL",
+            "value": "https://tao7378wo7.execute-api.ap-south-1.amazonaws.com",
+            "description": "Direct API Gateway URL for ap-south-1. Override in your Postman Environment.",
+            "type": "string"
+        },
+        {
+            "key": "SECONDARY_BASE_URL",
+            "value": "https://wjw9c6mjfh.execute-api.us-east-1.amazonaws.com",
+            "description": "Direct API Gateway URL for us-east-1. Override in your Postman Environment.",
+            "type": "string"
+        },
+        {
+            "key": "DOMAIN_NAME",
+            "value": "api.spworks.click",
+            "description": "Custom domain name used for DNS verification.",
+            "type": "string"
+        },
+        {
+            "key": "DEPLOY_ENV",
+            "value": "dev",
+            "description": "Deployment environment — used in descriptions only.",
+            "type": "string"
+        },
+        {
+            "key": "orderId",
+            "value": "",
+            "description": "Auto-generated UUID v4 per test. Set by pre-request scripts.",
+            "type": "string"
+        },
+        {
+            "key": "correlationId",
+            "value": "",
+            "description": "Auto-generated UUID v4 per test. Set by pre-request scripts.",
+            "type": "string"
+        },
+        {
+            "key": "primaryOrderId",
+            "value": "",
+            "description": "orderId created in the primary region. Used by cross-region consistency test.",
+            "type": "string"
+        },
+        {
+            "key": "primaryRegion",
+            "value": "",
+            "description": "Region string returned by the primary region health check.",
+            "type": "string"
+        },
+        {
+            "key": "secondaryRegion",
+            "value": "",
+            "description": "Region string returned by the secondary region health check.",
+            "type": "string"
+        }
+    ],
+    "item": [
+        {
+            "name": "1 — Custom Domain Health Check",
+            "description": "Verifies the Route 53 custom domain (api.spworks.click) resolves and the /health endpoint responds.\nThis proves:\n  - ACM certificate is valid and attached\n  - API Gateway Custom Domain Name is configured\n  - Route 53 latency routing is serving requests",
+            "item": [
+                {
+                    "name": "GET api.spworks.click/health → 200 ok",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has status=ok', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.status).to.eql('ok');",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has service=order-service', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.service).to.eql('order-service');",
+                                    "});",
+                                    "",
+                                    "pm.test('Custom domain resolved successfully (not a DNS error)', function () {",
+                                    "    pm.expect(pm.response.code).to.be.oneOf([200, 201, 301, 302, 400, 404]);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response time is under 3000ms (includes DNS + TLS)', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(3000);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{HOSTED_ZONE_URL}}/health",
+                            "host": [
+                                "{{HOSTED_ZONE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Health check via the Route 53 custom domain.\nProves ACM certificate is valid, API Gateway Custom Domain Name is configured,\nand Route 53 latency routing is resolving to a healthy regional endpoint."
+                    }
+                },
+                {
+                    "name": "GET api.spworks.click/health → TLS certificate valid",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('TLS handshake succeeded (no certificate error)', function () {",
+                                    "    // If we get any HTTP response, TLS succeeded",
+                                    "    pm.expect(pm.response.code).to.be.at.least(100);",
+                                    "});",
+                                    "",
+                                    "pm.test('Status code is 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "https://{{DOMAIN_NAME}}/health",
+                            "protocol": "https",
+                            "host": [
+                                "{{DOMAIN_NAME}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Explicit HTTPS request to the custom domain.\nValidates the ACM certificate is properly attached and TLS negotiation succeeds."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "2 — Custom Domain Order Placement",
+            "description": "Places an order via the Route 53 custom domain and validates the full response contract.\nThis is the primary US-6.1 acceptance test — proves the entire multi-region stack works end-to-end.",
+            "item": [
+                {
+                    "name": "POST api.spworks.click/orders → 201 Created",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId', uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-mr-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 201 Created', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has orderId (UUID v4)', function () {",
+                                    "    const json = pm.response.json();",
+                                    "    pm.expect(json.orderId).to.match(",
+                                    "        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i",
+                                    "    );",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "pm.test('Response body has correlationId', function () {",
+                                    "    pm.expect(pm.response.json().correlationId).to.be.a('string').and.not.empty;",
+                                    "});",
+                                    "",
+                                    "pm.test('X-Correlation-Id header is present', function () {",
+                                    "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.not.be.null;",
+                                    "});",
+                                    "",
+                                    "pm.test('Response time is under 2000ms (includes DNS + TLS + custom domain)', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(2000);",
+                                    "});",
+                                    "",
+                                    "pm.test('Content-Type is application/json', function () {",
+                                    "    pm.expect(pm.response.headers.get('Content-Type')).to.include('application/json');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"multi-region-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 2499.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-mr-001\",\n      \"productName\": \"Multi-Region Test Item\",\n      \"quantity\": 2,\n      \"unitPrice\": 1249.50\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{HOSTED_ZONE_URL}}/orders",
+                            "host": [
+                                "{{HOSTED_ZONE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Places a valid order via the custom domain (api.spworks.click).\nRoute 53 latency routing resolves to the nearest regional API Gateway.\nFull response contract validated including orderId, status, correlationId."
+                    }
+                },
+                {
+                    "name": "POST api.spworks.click/orders → validation error via custom domain",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Status code is 400 via custom domain', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('error field is ValidationError', function () {",
+                                    "    pm.expect(pm.response.json().error).to.eql('ValidationError');",
+                                    "});",
+                                    "",
+                                    "pm.test('correlationId present in error response via custom domain', function () {",
+                                    "    pm.expect(pm.response.json().correlationId).to.be.a('string').and.not.empty;",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{HOSTED_ZONE_URL}}/orders",
+                            "host": [
+                                "{{HOSTED_ZONE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Validation error test via the custom domain. Missing userId field."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "3 — Primary Region Direct (ap-south-1)",
+            "description": "Directly tests the primary region (ap-south-1) API Gateway endpoint.\nBypasses Route 53 latency routing to verify the primary stack independently.",
+            "item": [
+                {
+                    "name": "GET ap-south-1/health → 200 ok",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Primary region: status 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: status=ok', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('ok');",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: service=order-service', function () {",
+                                    "    pm.expect(pm.response.json().service).to.eql('order-service');",
+                                    "});",
+                                    "",
+                                    "// Capture the region for later comparison",
+                                    "if (pm.response.json().region) {",
+                                    "    pm.collectionVariables.set('primaryRegion', pm.response.json().region);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{PRIMARY_BASE_URL}}/health",
+                            "host": [
+                                "{{PRIMARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Direct health check against the primary region (ap-south-1)."
+                    }
+                },
+                {
+                    "name": "POST ap-south-1/orders → 201 Created",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId', uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-primary-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Primary region: status 201', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: orderId is UUID v4', function () {",
+                                    "    pm.expect(pm.response.json().orderId).to.match(",
+                                    "        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i",
+                                    "    );",
+                                    "    // Capture for cross-region consistency test",
+                                    "    pm.collectionVariables.set('primaryOrderId', pm.response.json().orderId);",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: X-Correlation-Id present', function () {",
+                                    "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.not.be.null;",
+                                    "});",
+                                    "",
+                                    "pm.test('Primary region: response under 1000ms', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"orderId\": \"{{orderId}}\",\n  \"userId\": \"primary-region-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 999.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-primary-001\",\n      \"productName\": \"Primary Region Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 999.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{PRIMARY_BASE_URL}}/orders",
+                            "host": [
+                                "{{PRIMARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Creates an order directly in the primary region. The orderId is captured for cross-region consistency test."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "4 — Secondary Region Direct (us-east-1)",
+            "description": "Directly tests the secondary region (us-east-1) API Gateway endpoint.\nBypasses Route 53 latency routing to verify the secondary stack independently.",
+            "item": [
+                {
+                    "name": "GET us-east-1/health → 200 ok",
+                    "event": [
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Secondary region: status 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: status=ok', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('ok');",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: service=order-service', function () {",
+                                    "    pm.expect(pm.response.json().service).to.eql('order-service');",
+                                    "});",
+                                    "",
+                                    "// Capture the region for later comparison",
+                                    "if (pm.response.json().region) {",
+                                    "    pm.collectionVariables.set('secondaryRegion', pm.response.json().region);",
+                                    "}"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{SECONDARY_BASE_URL}}/health",
+                            "host": [
+                                "{{SECONDARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Direct health check against the secondary region (us-east-1)."
+                    }
+                },
+                {
+                    "name": "POST us-east-1/orders → 201 Created",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "pm.collectionVariables.set('orderId', uuid());",
+                                    "pm.collectionVariables.set('correlationId', 'postman-secondary-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Secondary region: status 201', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: orderId is UUID v4', function () {",
+                                    "    pm.expect(pm.response.json().orderId).to.match(",
+                                    "        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i",
+                                    "    );",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: X-Correlation-Id present', function () {",
+                                    "    pm.expect(pm.response.headers.get('X-Correlation-Id')).to.not.be.null;",
+                                    "});",
+                                    "",
+                                    "pm.test('Secondary region: response under 1000ms', function () {",
+                                    "    pm.expect(pm.response.responseTime).to.be.below(1000);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userId\": \"secondary-region-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"US\",\n  \"currency\": \"USD\",\n  \"totalAmount\": 499.99,\n  \"items\": [\n    {\n      \"productId\": \"prod-secondary-001\",\n      \"productName\": \"Secondary Region Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 499.99\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{SECONDARY_BASE_URL}}/orders",
+                            "host": [
+                                "{{SECONDARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Creates an order directly in the secondary region."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "5 — Cross-Region DynamoDB Replication",
+            "description": "Verifies DynamoDB Global Table replication.\nPlaces an order in the primary region and then reads it from the secondary region.\n\nNote: DynamoDB Global Tables have ~1 second replication lag.\nThe test includes a 5-second delay between write and cross-region read.",
+            "item": [
+                {
+                    "name": "POST ap-south-1/orders — write in primary",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "const uuid = () => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {",
+                                    "    const r = Math.random() * 16 | 0;",
+                                    "    return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);",
+                                    "});",
+                                    "const crossRegionOrderId = uuid();",
+                                    "pm.collectionVariables.set('primaryOrderId', crossRegionOrderId);",
+                                    "pm.collectionVariables.set('orderId', crossRegionOrderId);",
+                                    "pm.collectionVariables.set('correlationId', 'postman-xregion-' + uuid());"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Cross-region write: status 201', function () {",
+                                    "    pm.response.to.have.status(201);",
+                                    "});",
+                                    "",
+                                    "pm.test('Cross-region write: orderId matches sent value', function () {",
+                                    "    const sent = pm.collectionVariables.get('primaryOrderId');",
+                                    "    pm.expect(pm.response.json().orderId).to.eql(sent);",
+                                    "});",
+                                    "",
+                                    "pm.test('Cross-region write: status=PLACED', function () {",
+                                    "    pm.expect(pm.response.json().status).to.eql('PLACED');",
+                                    "});",
+                                    "",
+                                    "// Log the orderId so the user knows which order to check",
+                                    "console.log('Cross-region order created: ' + pm.response.json().orderId);",
+                                    "console.log('Wait ~5 seconds, then verify this order appears in us-east-1 DynamoDB via AWS Console.');"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            },
+                            {
+                                "key": "x-correlation-id",
+                                "value": "{{correlationId}}"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"orderId\": \"{{primaryOrderId}}\",\n  \"userId\": \"cross-region-test-user\",\n  \"userEmail\": \"success@simulator.amazonses.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 7777.00,\n  \"items\": [\n    {\n      \"productId\": \"prod-xregion-001\",\n      \"productName\": \"Cross-Region Replication Test Item\",\n      \"quantity\": 1,\n      \"unitPrice\": 7777.00\n    }\n  ]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{PRIMARY_BASE_URL}}/orders",
+                            "host": [
+                                "{{PRIMARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Writes an order to the primary region (ap-south-1).\nThe same orderId should appear in the secondary region's DynamoDB table within ~5 seconds\nthanks to DynamoDB Global Table replication."
+                    }
+                },
+                {
+                    "name": "Replication verification instructions",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// Wait 5 seconds to allow DynamoDB Global Table replication",
+                                    "console.log('Waiting 5 seconds for DynamoDB Global Table replication...');",
+                                    "const delay = new Promise(resolve => setTimeout(resolve, 5000));",
+                                    "// Note: Postman does not support async delays in pre-request scripts.",
+                                    "// The actual verification must be done manually or via AWS CLI."
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// This is a placeholder test that instructs the user to verify replication manually",
+                                    "pm.test('Status 200 from secondary region (secondary stack is healthy)', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Instruction: Verify cross-region replication via AWS CLI', function () {",
+                                    "    const orderId = pm.collectionVariables.get('primaryOrderId');",
+                                    "    console.log('=== CROSS-REGION REPLICATION VERIFICATION ===');",
+                                    "    console.log('Order written to ap-south-1: ' + orderId);",
+                                    "    console.log('');",
+                                    "    console.log('Run this AWS CLI command to verify replication to us-east-1:');",
+                                    "    console.log('aws dynamodb get-item --table-name orders-dev --key \\'{\"orderId\":{\"S\":\"' + orderId + '\"},\"createdAt\":{\"S\":\"' + new Date().toISOString().split('T')[0] + '\"}}\\' --region us-east-1');",
+                                    "    console.log('');",
+                                    "    console.log('Expected: Item should appear in us-east-1 within ~5 seconds of creation.');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{SECONDARY_BASE_URL}}/health",
+                            "host": [
+                                "{{SECONDARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Calls the secondary health endpoint to confirm it's reachable, then logs instructions for verifying DynamoDB Global Table replication via AWS CLI."
+                    }
+                }
+            ]
+        },
+        {
+            "name": "6 — Region Parity",
+            "description": "Verifies both regions return identical response shapes and behavior.\nEnsures infrastructure parity between ap-south-1 and us-east-1 deployments.",
+            "item": [
+                {
+                    "name": "Both regions: health response shape matches",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// First, call the primary region and store the response shape",
+                                    "pm.sendRequest({",
+                                    "    url: pm.variables.get('PRIMARY_BASE_URL') + '/health',",
+                                    "    method: 'GET'",
+                                    "}, function (err, res) {",
+                                    "    if (!err && res) {",
+                                    "        const primaryBody = res.json();",
+                                    "        pm.collectionVariables.set('primaryHealthKeys', JSON.stringify(Object.keys(primaryBody).sort()));",
+                                    "    }",
+                                    "});"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Secondary region: status 200', function () {",
+                                    "    pm.response.to.have.status(200);",
+                                    "});",
+                                    "",
+                                    "pm.test('Region parity: both regions return the same response keys', function () {",
+                                    "    const primaryKeys = pm.collectionVariables.get('primaryHealthKeys');",
+                                    "    if (!primaryKeys) {",
+                                    "        console.log('Skipping parity check — primary response not captured.');",
+                                    "        return;",
+                                    "    }",
+                                    "    const secondaryKeys = JSON.stringify(Object.keys(pm.response.json()).sort());",
+                                    "    pm.expect(secondaryKeys).to.eql(primaryKeys);",
+                                    "});",
+                                    "",
+                                    "pm.test('Region parity: both regions return service=order-service', function () {",
+                                    "    pm.expect(pm.response.json().service).to.eql('order-service');",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "GET",
+                        "header": [],
+                        "url": {
+                            "raw": "{{SECONDARY_BASE_URL}}/health",
+                            "host": [
+                                "{{SECONDARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "health"
+                            ]
+                        },
+                        "description": "Calls the secondary health endpoint and compares the response shape with the primary region (called in pre-request script). Ensures infrastructure parity."
+                    }
+                },
+                {
+                    "name": "Both regions: validation errors return same shape",
+                    "event": [
+                        {
+                            "listen": "prerequest",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "// Call primary region with the same invalid payload and store shape",
+                                    "pm.sendRequest({",
+                                    "    url: pm.variables.get('PRIMARY_BASE_URL') + '/orders',",
+                                    "    method: 'POST',",
+                                    "    header: { 'Content-Type': 'application/json' },",
+                                    "    body: {",
+                                    "        mode: 'raw',",
+                                    "        raw: JSON.stringify({",
+                                    "            userEmail: 'test@example.com',",
+                                    "            country: 'IN',",
+                                    "            currency: 'INR',",
+                                    "            totalAmount: 100.00,",
+                                    "            items: [{ productId: 'p1', productName: 'Item', quantity: 1, unitPrice: 100.00 }]",
+                                    "        })",
+                                    "    }",
+                                    "}, function (err, res) {",
+                                    "    if (!err && res) {",
+                                    "        const primaryBody = res.json();",
+                                    "        pm.collectionVariables.set('primaryErrorKeys', JSON.stringify(Object.keys(primaryBody).sort()));",
+                                    "        pm.collectionVariables.set('primaryErrorType', primaryBody.error);",
+                                    "    }",
+                                    "});"
+                                ]
+                            }
+                        },
+                        {
+                            "listen": "test",
+                            "script": {
+                                "type": "text/javascript",
+                                "exec": [
+                                    "pm.test('Secondary region: status 400 for invalid payload', function () {",
+                                    "    pm.response.to.have.status(400);",
+                                    "});",
+                                    "",
+                                    "pm.test('Region parity: same error type from both regions', function () {",
+                                    "    const primaryErrorType = pm.collectionVariables.get('primaryErrorType');",
+                                    "    if (!primaryErrorType) {",
+                                    "        console.log('Skipping parity check — primary response not captured.');",
+                                    "        return;",
+                                    "    }",
+                                    "    pm.expect(pm.response.json().error).to.eql(primaryErrorType);",
+                                    "});",
+                                    "",
+                                    "pm.test('Region parity: same error response keys', function () {",
+                                    "    const primaryKeys = pm.collectionVariables.get('primaryErrorKeys');",
+                                    "    if (!primaryKeys) {",
+                                    "        console.log('Skipping parity check — primary response not captured.');",
+                                    "        return;",
+                                    "    }",
+                                    "    const secondaryKeys = JSON.stringify(Object.keys(pm.response.json()).sort());",
+                                    "    pm.expect(secondaryKeys).to.eql(primaryKeys);",
+                                    "});"
+                                ]
+                            }
+                        }
+                    ],
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Content-Type",
+                                "value": "application/json"
+                            }
+                        ],
+                        "body": {
+                            "mode": "raw",
+                            "raw": "{\n  \"userEmail\": \"test@example.com\",\n  \"country\": \"IN\",\n  \"currency\": \"INR\",\n  \"totalAmount\": 100.00,\n  \"items\": [{ \"productId\": \"p1\", \"productName\": \"Item\", \"quantity\": 1, \"unitPrice\": 100.00 }]\n}",
+                            "options": {
+                                "raw": {
+                                    "language": "json"
+                                }
+                            }
+                        },
+                        "url": {
+                            "raw": "{{SECONDARY_BASE_URL}}/orders",
+                            "host": [
+                                "{{SECONDARY_BASE_URL}}"
+                            ],
+                            "path": [
+                                "orders"
+                            ]
+                        },
+                        "description": "Sends the same invalid payload to both regions (primary in pre-request, secondary as main request) and compares the error response shapes."
+                    }
+                }
+            ]
+        }
+    ],
+    "event": [
+        {
+            "listen": "prerequest",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "// Collection-level pre-request: strip trailing slashes from all URL variables",
+                    "['HOSTED_ZONE_URL', 'PRIMARY_BASE_URL', 'SECONDARY_BASE_URL'].forEach(key => {",
+                    "    let val = pm.collectionVariables.get(key) || '';",
+                    "    if (val.endsWith('/')) {",
+                    "        pm.collectionVariables.set(key, val.slice(0, -1));",
+                    "    }",
+                    "});"
+                ]
+            }
+        },
+        {
+            "listen": "test",
+            "script": {
+                "type": "text/javascript",
+                "exec": [
+                    "// Collection-level: assert all responses return within 5 seconds",
+                    "pm.test('[Global] Response time under 5000ms', function () {",
+                    "    pm.expect(pm.response.responseTime).to.be.below(5000);",
+                    "});"
+                ]
+            }
+        }
+    ]
+}

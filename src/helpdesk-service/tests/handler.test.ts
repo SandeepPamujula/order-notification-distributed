@@ -9,7 +9,7 @@ import { handler } from '../src/handler';
 import { ValidationError, InternalError, EmailError } from '@shared/errors';
 
 const TEST_ENV = {
-    SES_HELPDESK_ADDRESS: 'helpdesk@spkumarorder.com',
+    SES_HELPDESK_ADDRESS: 'helpdesk@spworks.click',
 };
 
 const validEventBridgeEvent = {
@@ -54,7 +54,7 @@ describe('Helpdesk Service Handler', () => {
         const firstCall = sendEmailCalls[0];
         expect(firstCall).toBeDefined();
         // @ts-ignore
-        expect(firstCall.args[0].input.Destination?.ToAddresses).toContain('helpdesk@spkumarorder.com');
+        expect(firstCall.args[0].input.Destination?.ToAddresses).toContain('helpdesk@spworks.click');
         // @ts-ignore
         expect(firstCall.args[0].input.Message?.Subject?.Data).toContain('US');
     });

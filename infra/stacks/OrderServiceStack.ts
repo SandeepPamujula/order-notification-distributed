@@ -1,4 +1,5 @@
 import * as cdk from 'aws-cdk-lib';
+import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as apigwv2 from 'aws-cdk-lib/aws-apigatewayv2';
 import * as apigwv2Integrations from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -7,6 +8,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as snsSubscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as ssm from 'aws-cdk-lib/aws-ssm';
 import type { Construct } from 'constructs';
@@ -22,10 +24,12 @@ import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
 // OrderServiceStack — Phase 1 infrastructure for the Order Service
 //
 // Provisions:
-//  - DynamoDB Orders table (On-Demand, Streams enabled, GSIs for user + country queries)
+//  - DynamoDB Orders Global Table (replicated to primary + secondary regions)
 //  - SNS topic `order-events-{env}` for fan-out
 //  - SQS queues: notification-queue + inventory-queue, each with a DLQ
 //  - HTTP API Gateway with POST /orders + GET /health
+//  - ACM certificate for api.<domainName> (DNS-validated)
+//  - API Gateway Custom Domain Name linked to ACM certificate
 //  - Order Lambda (PowertoolsLambda) with least-privilege IAM
 //  - EventBridge custom bus `order-events-bus-{env}`
 //  - MESSAGING_MODE SSM parameter (default: SNS)
@@ -51,6 +55,20 @@ export interface OrderServiceStackProps extends cdk.StackProps {
      * Set via CDK context per environment; leave undefined for dev to avoid limits.
      */
     readonly orderLambdaReservedConcurrency?: number;
+    /**
+     * The apex domain name (e.g. spworks.click).
+     * Used to provision ACM certificate and API Gateway Custom Domain Name
+     * for `api.<domainName>`. If not provided, custom domain is not configured.
+     */
+    readonly domainName?: string;
+    /**
+     * The region(s) for DynamoDB Global Table replication.
+     * Each region listed (other than the stack's own region) will be added
+     * as a replica. Pass an empty array or undefined to skip replication.
+     */
+    readonly replicationRegions?: string[];
+    /** Whether this stack is being deployed in the secondary region (imports replicated DynamoDB tables) */
+    readonly isSecondaryRegion?: boolean;
 }
 
 /**
@@ -64,7 +82,7 @@ export interface OrderServiceStackProps extends cdk.StackProps {
  */
 export class OrderServiceStack extends cdk.Stack {
     /** The DynamoDB Orders table. */
-    public readonly ordersTable: dynamodb.Table;
+    public readonly ordersTable: dynamodb.ITable;
 
     /** The SNS topic used for Phase 1 fan-out. */
     public readonly orderEventsTopic: sns.Topic;
@@ -87,7 +105,7 @@ export class OrderServiceStack extends cdk.Stack {
     constructor(scope: Construct, id: string, props: OrderServiceStackProps) {
         super(scope, id, props);
 
-        const { envName, owner, lambdaCode, orderLambdaReservedConcurrency } = props;
+        const { envName, owner, lambdaCode, orderLambdaReservedConcurrency, domainName, replicationRegions } = props;
 
         // -----------------------------------------------------------------------
         // 1. DynamoDB Orders table
@@ -97,35 +115,48 @@ export class OrderServiceStack extends cdk.Stack {
         //  - GSI-1: query orders by userId
         //  - GSI-2: query orders by country + status
         //  - TTL: allows automated expiry of old order records
+        //  - Global Table replication: replicated to all specified regions (US-6.1)
         // -----------------------------------------------------------------------
-        this.ordersTable = new dynamodb.Table(this, 'OrdersTable', {
-            tableName: `orders-${envName}`,
-            partitionKey: { name: 'orderId', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
-            // Enable streams now so Phase 2 ESM can be attached without table replacement
-            stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
-            timeToLiveAttribute: 'ttl',
-            // Point-in-time recovery for resilience
-            pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
-            removalPolicy: envName === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-        });
+        const tableName = `orders-${envName}`;
 
-        // GSI-1: query orders by user (e.g. "all orders for userId X")
-        this.ordersTable.addGlobalSecondaryIndex({
-            indexName: 'GSI-userId-createdAt',
-            partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
-            projectionType: dynamodb.ProjectionType.ALL,
-        });
+        if (props.isSecondaryRegion) {
+            // In the secondary region, the Global Table replica already exists natively because
+            // the primary stack created it. Therefore, we import it instead of defining it again.
+            this.ordersTable = dynamodb.Table.fromTableName(this, 'OrdersTable', tableName);
+        } else {
+            // Filter out this stack's own region from the replication list.
+            const ordersReplicaRegions = replicationRegions?.filter(r => r !== this.region);
 
-        // GSI-2: query orders by country + status (e.g. "all PLACED orders for country US")
-        this.ordersTable.addGlobalSecondaryIndex({
-            indexName: 'GSI-country-status',
-            partitionKey: { name: 'country', type: dynamodb.AttributeType.STRING },
-            sortKey: { name: 'status', type: dynamodb.AttributeType.STRING },
-            projectionType: dynamodb.ProjectionType.ALL,
-        });
+            const table = new dynamodb.Table(this, 'OrdersTable', {
+                tableName,
+                partitionKey: { name: 'orderId', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+                billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+                stream: dynamodb.StreamViewType.NEW_AND_OLD_IMAGES,
+                timeToLiveAttribute: 'ttl',
+                pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
+                removalPolicy: envName === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+                ...(ordersReplicaRegions && ordersReplicaRegions.length > 0 && { replicationRegions: ordersReplicaRegions }),
+            });
+
+            // GSI-1: query orders by user (e.g. "all orders for userId X")
+            table.addGlobalSecondaryIndex({
+                indexName: 'GSI-userId-createdAt',
+                partitionKey: { name: 'userId', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'createdAt', type: dynamodb.AttributeType.STRING },
+                projectionType: dynamodb.ProjectionType.ALL,
+            });
+
+            // GSI-2: query orders by country + status (e.g. "all PLACED orders for country US")
+            table.addGlobalSecondaryIndex({
+                indexName: 'GSI-country-status',
+                partitionKey: { name: 'country', type: dynamodb.AttributeType.STRING },
+                sortKey: { name: 'status', type: dynamodb.AttributeType.STRING },
+                projectionType: dynamodb.ProjectionType.ALL,
+            });
+
+            this.ordersTable = table;
+        }
 
         // -----------------------------------------------------------------------
         // 2. EventBridge custom bus
@@ -353,8 +384,8 @@ export class OrderServiceStack extends cdk.Stack {
         });
 
         const apiGw5xxAlarm = new cloudwatch.Alarm(this, 'ApiGw5xxAlarm', {
-            alarmName: `api-gateway-5xx-rate-${envName}`,
-            alarmDescription: `API Gateway 5XX error rate exceeded 1%`,
+            alarmName: `api-gateway-5xx-rate-${this.region}-${envName}`,
+            alarmDescription: `API Gateway 5XX error rate exceeded 1% (${this.region})`,
             metric: apiGw5xxRateMetric,
             threshold: 1,
             comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
@@ -371,8 +402,8 @@ export class OrderServiceStack extends cdk.Stack {
         });
 
         const apiGwLatencyAlarm = new cloudwatch.Alarm(this, 'ApiGwLatencyAlarm', {
-            alarmName: `api-gateway-latency-${envName}`,
-            alarmDescription: `API Gateway p99 latency exceeded 1000ms`,
+            alarmName: `api-gateway-latency-${this.region}-${envName}`,
+            alarmDescription: `API Gateway p99 latency exceeded 1000ms (${this.region})`,
             metric: apiGwLatencyMetric,
             threshold: 1000,
             comparisonOperator: cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
@@ -384,6 +415,74 @@ export class OrderServiceStack extends cdk.Stack {
         const apiGwAction = new cloudwatchActions.SnsAction(apiGwTopic);
         apiGw5xxAlarm.addAlarmAction(apiGwAction);
         apiGwLatencyAlarm.addAlarmAction(apiGwAction);
+
+        // -----------------------------------------------------------------------
+        // 8.2. ACM Certificate + API Gateway Custom Domain Name (US-6.1)
+        //
+        // Provisions a DNS-validated ACM certificate for `api.<domainName>` and
+        // creates an API Gateway Custom Domain Name mapped to the HTTP API's
+        // $default stage. The regional endpoint is exported via SSM so that
+        // SharedStack can point Route 53 latency records to it.
+        // -----------------------------------------------------------------------
+        if (domainName) {
+            const apiSubdomain = `api.${domainName}`;
+
+            // ACM certificate — DNS-validated.
+            // In production, the validation CNAME must be added to the hosted zone.
+            // CDK can auto-create the validation record if the hosted zone is in
+            // the same account, but since SharedStack owns the zone in us-east-1,
+            // we use CertificateValidation.fromDns() without a hosted zone reference
+            // and rely on manual/automated DNS validation.
+            const hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
+                domainName: domainName,
+            });
+
+            const certificate = new acm.Certificate(this, 'ApiCertificate', {
+                domainName: apiSubdomain,
+                validation: acm.CertificateValidation.fromDns(hostedZone),
+            });
+
+            // API Gateway v2 Custom Domain Name
+            const customDomain = new apigwv2.DomainName(this, 'ApiCustomDomain', {
+                domainName: apiSubdomain,
+                certificate,
+            });
+
+            // Map the custom domain to the HTTP API's $default stage
+            new apigwv2.ApiMapping(this, 'ApiMapping', {
+                api: this.httpApi,
+                domainName: customDomain,
+                // Routes to the $default stage (created automatically by createDefaultStage: true)
+            });
+
+            // Export the regional domain name target for Route 53 latency records.
+            // This is the API Gateway-owned regional endpoint, NOT the user-facing domain.
+            // Example: d-abc123.execute-api.ap-south-1.amazonaws.com
+            new ssm.StringParameter(this, 'CustomDomainRegionalEndpointParam', {
+                parameterName: `/order-service/${envName}/custom-domain-regional-endpoint`,
+                stringValue: customDomain.regionalDomainName,
+                description: `API Gateway Custom Domain regional endpoint for ${apiSubdomain} (${this.region})`,
+            });
+
+            new ssm.StringParameter(this, 'CustomDomainRegionalHostedZoneIdParam', {
+                parameterName: `/order-service/${envName}/custom-domain-regional-hosted-zone-id`,
+                stringValue: customDomain.regionalHostedZoneId,
+                description: `API Gateway Custom Domain regional hosted zone ID for ${apiSubdomain} (${this.region})`,
+            });
+
+            // CloudFormation outputs for the custom domain
+            new cdk.CfnOutput(this, 'CustomDomainName', {
+                value: apiSubdomain,
+                description: 'API Gateway Custom Domain Name',
+                exportName: `OrderServiceStack-${this.region}-${envName}-CustomDomainName`,
+            });
+
+            new cdk.CfnOutput(this, 'CustomDomainRegionalEndpoint', {
+                value: customDomain.regionalDomainName,
+                description: 'API Gateway Custom Domain regional endpoint (for Route 53)',
+                exportName: `OrderServiceStack-${this.region}-${envName}-CustomDomainRegionalEndpoint`,
+            });
+        }
 
         // -----------------------------------------------------------------------
         // 9. Cross-stack SSM parameter exports
@@ -443,9 +542,15 @@ export class OrderServiceStack extends cdk.Stack {
         });
 
         // Stream ARN — wired to ESM in US-7.1 (Phase 2 migration)
+        // Wait, imported table doesn't have tableStreamArn property unless manually looked up. Fallback needed.
+        let streamArn = 'STREAM_NOT_ENABLED';
+        if (!props.isSecondaryRegion) {
+            streamArn = (this.ordersTable as dynamodb.Table).tableStreamArn ?? 'STREAM_NOT_ENABLED';
+        }
+
         new ssm.StringParameter(this, 'OrdersTableStreamArnParam', {
             parameterName: `/order-service/${envName}/orders-table-stream-arn`,
-            stringValue: this.ordersTable.tableStreamArn ?? 'STREAM_NOT_ENABLED',
+            stringValue: streamArn,
             description: 'DynamoDB Orders table stream ARN (used by Phase 2 ESM in US-7.1)',
         });
 

@@ -15,7 +15,7 @@ export interface SharedStackProps extends cdk.StackProps {
     /** Environment name: dev | staging | prod */
     readonly envName: string;
 
-    /** The apex domain name for the hosted zone (e.g. spkumarorder.com). */
+    /** The apex domain name for the hosted zone (e.g. spworks.click). */
     readonly domainName: string;
 
     /**
@@ -38,7 +38,7 @@ export interface SharedStackProps extends cdk.StackProps {
  * Shared infrastructure stack — deployed once to `us-east-1`.
  *
  * Responsibilities:
- * - Owns the Route 53 public hosted zone for `spkumarorder.com`.
+ * - Owns the Route 53 public hosted zone for `spworks.click`.
  * - Provisions Route 53 HTTP health checks for both regional API Gateway
  *   `/health` endpoints (failure threshold: 3, interval: 30 s).
  * - Creates latency-based A-alias records pointing to each region's API GW,
@@ -52,7 +52,7 @@ export interface SharedStackProps extends cdk.StackProps {
  * new SharedStack(app, 'SharedStack-us-east-1-dev', {
  *   env: { account: '123456789012', region: 'us-east-1' },
  *   envName: 'dev',
- *   domainName: 'spkumarorder.com',
+ *   domainName: 'spworks.click',
  *   primaryApiGatewayDomainName: 'abc123.execute-api.ap-south-1.amazonaws.com',
  *   secondaryApiGatewayDomainName: 'xyz789.execute-api.us-east-1.amazonaws.com',
  *   owner: 'platform-team',
@@ -61,7 +61,7 @@ export interface SharedStackProps extends cdk.StackProps {
  */
 export class SharedStack extends cdk.Stack {
     /** The Route 53 public hosted zone that owns the `api.<domainName>` subdomain. */
-    public readonly hostedZone: route53.PublicHostedZone;
+    public readonly hostedZone: route53.IHostedZone;
 
     /** Route 53 health check targeting the `ap-south-1` API Gateway `/health` path. */
     public readonly primaryHealthCheck: route53.CfnHealthCheck;
@@ -86,15 +86,14 @@ export class SharedStack extends cdk.Stack {
         // -----------------------------------------------------------------------
         // Route 53 public hosted zone
         //
-        // The zone is created for the **parent domain** (e.g. spkumarorder.com)
-        // so that `api.spkumarorder.com` is a regular subdomain — NOT the zone
+        // The zone is created for the **parent domain** (e.g. spworks.click)
+        // so that `api.spworks.click` is a regular subdomain — NOT the zone
         // apex.  DNS RFC 1034 forbids CNAME records at the zone apex, so hosting
         // the zone at the parent domain avoids the CREATE_FAILED error:
         //   "RRSet of type CNAME … is not permitted at apex in zone …"
         // -----------------------------------------------------------------------
-        this.hostedZone = new route53.PublicHostedZone(this, 'HostedZone', {
-            zoneName: domainName,
-            comment: `Public hosted zone for ${domainName} — managed by SharedStack (${envName})`,
+        this.hostedZone = route53.HostedZone.fromLookup(this, 'HostedZone', {
+            domainName: domainName,
         });
 
         // -----------------------------------------------------------------------
@@ -277,11 +276,13 @@ export class SharedStack extends cdk.Stack {
             exportName: `SharedStack-${envName}-ApiSubdomain`,
         });
 
+        /*
         new cdk.CfnOutput(this, 'NameServers', {
             // Delegate NS records from the apex domain registrar to these name servers
-            value: cdk.Fn.join(', ', this.hostedZone.hostedZoneNameServers ?? []),
+            value: cdk.Fn.join(', ', this.hostedZone.hostedZoneNameServers ?? ['N/A (Imported Zone)']),
             description:
                 'Route 53 name servers — add these as NS records in your domain registrar dashboard',
         });
+        */
     }
 }
