@@ -652,19 +652,19 @@ Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Tabl
 ---
 
 ### US-6.2 — Contract Tests for Cross-Service Events
-**Story Points:** 3 | **Status:** [ ]
+**Story Points:** 3 | **Status:** [x] Complete
 
 **Description:** As a service owner, I want contract tests for all Kinesis/EventBridge/SNS event schemas so that schema drift between services is caught in CI.
 
 **Tasks:**
-- [ ] Define JSON Schema / Zod schemas for:
+- [x] Define JSON Schema / Zod schemas for:
   - SNS/SQS `ORDER_PLACED` event (§6.1)
   - EventBridge `OrderPlaced` event (§6.2)
   - DynamoDB Streams record (§6.3)
-- [ ] Create contract test suite in `src/shared/contract-tests/`
-- [ ] Producer test (Order Service): assert published event matches schema
-- [ ] Consumer test (Notification, Inventory, Helpdesk): assert handler can parse schema-compliant events
-- [ ] Add contract tests to each service's CI pipeline
+- [x] Create contract test suite in `src/shared/contract-tests/`
+- [x] Producer test (Order Service): assert published event matches schema
+- [x] Consumer test (Notification, Inventory, Helpdesk): assert handler can parse schema-compliant events
+- [x] Add contract tests to each service's CI pipeline
 
 **Acceptance Criteria:**
 - Contract tests run in CI for all services
@@ -815,6 +815,71 @@ Validate the system against target TPS, ensure all operational excellence requir
 
 ---
 
+### US-8.4 — Retry & Circuit Breaker Patterns for All Services
+**Story Points:** 8 | **Status:** [ ]
+
+**Description:** As a platform engineer, I want every service to use a consistent retry strategy (exponential backoff with jitter) and a circuit breaker pattern for all downstream calls so that transient failures are handled gracefully and cascading failures are prevented.
+
+**Tasks:**
+
+**Shared Resilience Library (`src/shared/resilience/`):**
+- [ ] Create `src/shared/resilience/retry.ts` — configurable retry wrapper with exponential backoff + full jitter (base delay: 100ms, max delay: 5s, max attempts: 3)
+- [ ] Create `src/shared/resilience/circuit-breaker.ts` — lightweight circuit breaker (states: CLOSED → OPEN → HALF_OPEN):
+  - Failure threshold: 5 consecutive failures → OPEN
+  - Open timeout: 30 seconds → transitions to HALF_OPEN
+  - Half-open: 1 probe request; success → CLOSED, failure → OPEN
+  - State stored in-memory per Lambda instance (stateless between cold starts)
+- [ ] Create `src/shared/resilience/resilient-call.ts` — composes retry + circuit breaker into a single `resilientCall<T>(fn, options)` helper
+- [ ] Create `src/shared/resilience/errors.ts` — `CircuitOpenError`, `MaxRetriesExceededError` custom error classes
+- [ ] Unit tests for retry logic (jitter randomness, backoff progression, max attempts), circuit breaker state machine transitions, and composed resilient call
+- [ ] Export from `src/shared/index.ts`
+
+**Order Service (`src/order-service/`):**
+- [ ] Wrap `DynamoDB PutItem` call with `resilientCall` (retry on `ProvisionedThroughputExceededException`, `ThrottlingException`)
+- [ ] Wrap `SNS Publish` call with `resilientCall` (retry on `ThrottledException`, `InternalErrorException`)
+- [ ] Wrap `EventBridge PutEvents` call with `resilientCall` (retry on `ThrottlingException`)
+- [ ] On circuit OPEN: return `503 Service Unavailable` with `Retry-After` header
+- [ ] Log circuit breaker state transitions via Powertools structured logger
+
+**Notification Service (`src/notification-service/`):**
+- [ ] Wrap `SES SendEmail` call with `resilientCall` (retry on `ThrottlingException`, `ServiceUnavailableException`; do NOT retry on `MessageRejected`)
+- [ ] Wrap `DynamoDB PutItem` call with `resilientCall`
+- [ ] On circuit OPEN for SES: mark notification as `PENDING_RETRY`, report `batchItemFailures` for SQS redelivery
+
+**Inventory Service (`src/inventory-service/`):**
+- [ ] Wrap any future downstream calls with `resilientCall` (currently logging-only — add circuit breaker readiness for Phase 2 DynamoDB writes)
+
+**Helpdesk Service (`src/helpdesk-service/`):**
+- [ ] Wrap `SES SendEmail` call with `resilientCall` (same retry policy as Notification Service)
+- [ ] On circuit OPEN: throw error to trigger EventBridge built-in retry (up to 2 retries with backoff)
+
+**CDK Infrastructure:**
+- [ ] Add CloudWatch custom metrics for circuit breaker state changes (`CircuitBreakerStateChange` metric with dimensions: `service`, `downstream`, `state`)
+- [ ] Add CloudWatch alarm: `CircuitBreakerOpen > 0` for 1 minute → SNS ops notification
+- [ ] Add dashboard widgets to `ObservabilityStack`: circuit breaker open counts per service, retry attempt distribution
+
+**Documentation:**
+- [ ] Write `docs/adr/ADR-009-retry-circuit-breaker-strategy.md`:
+  - Decision: In-memory circuit breaker vs. shared state (DynamoDB/ElastiCache)
+  - Decision: Exponential backoff with full jitter (vs. decorrelated jitter, vs. fixed intervals)
+  - Decision: Which errors are retryable vs. non-retryable per AWS service
+  - Decision: Circuit breaker thresholds and timeout values
+- [ ] Update each service `README.md` with resilience configuration and error handling behaviour
+
+**Acceptance Criteria:**
+- All downstream AWS SDK calls in all four services are wrapped with `resilientCall`
+- Transient DynamoDB/SNS/SES/EventBridge throttling errors are retried up to 3 times with exponential backoff + jitter
+- Non-retryable errors (e.g. `ValidationException`, `MessageRejected`) fail immediately without retry
+- Circuit breaker opens after 5 consecutive failures; requests fail fast with `CircuitOpenError` for 30 seconds
+- Circuit breaker HALF_OPEN state allows a single probe request to test recovery
+- Order Service returns `503` with `Retry-After` header when circuit is OPEN
+- Notification Service reports `batchItemFailures` when circuit is OPEN (SQS redelivery)
+- CloudWatch alarm fires within 1 minute of any circuit breaker opening
+- Unit tests cover all retry/circuit breaker state transitions with ≥ 80% coverage
+- `resilientCall` is reusable across all services via `src/shared/`
+
+---
+
 ## Story Point Summary
 
 | Milestone | Points | Priority |
@@ -827,8 +892,8 @@ Validate the system against target TPS, ensure all operational excellence requir
 | M5 — Observability Stack | 5 | 🟠 High |
 | M6 — Multi-Region Deployment | 11 | 🟡 Medium |
 | M7 — Phase 2 Migration | 12 | 🟡 Medium |
-| M8 — Production Hardening | 10 | 🟡 Medium |
-| **Total** | **100** | |
+| M8 — Production Hardening | 18 | 🟡 Medium |
+| **Total** | **108** | |
 
 ---
 
