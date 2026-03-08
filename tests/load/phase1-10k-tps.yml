@@ -1,0 +1,34 @@
+config:
+  target: "https://api.spworks.click"
+  phases:
+    - duration: 300
+      arrivalRate: 0
+      rampTo: 10000
+      name: "Ramp up"
+    - duration: 600
+      arrivalRate: 10000
+      name: "Sustain 10K TPS"
+  payload:
+    # We could use a CSV, but we'll use inline variables or JS for dynamic data if needed.
+    # For Artillery, it's easier to use variables populated by built-in faker.
+  variables:
+    userId: "user-{{ $randomString() }}"
+    productId: "prod-{{ $randomString() }}"
+scenarios:
+  - name: "Place Order"
+    flow:
+      - post:
+          url: "/orders"
+          json:
+            userId: "{{ userId }}"
+            userEmail: "loadtest-{{ $randomString() }}@example.com"
+            country: "US"
+            currency: "USD"
+            totalAmount: 150
+            items:
+              - productId: "{{ productId }}"
+                productName: "Load Test Product"
+                quantity: 1
+                unitPrice: 150
+          expect:
+            - statusCode: 201

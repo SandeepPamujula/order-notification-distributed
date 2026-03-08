@@ -35,8 +35,8 @@
 | **M4** | Helpdesk Service — Phase 1 & 2 | Phase 1 & 2 |
 | **M5** | Observability Stack | Phase 1 & 2 |
 | **M6** | Multi-Region & Shared Infrastructure | Phase 1 & 2 |
-| **M7** | Phase 2 Migration (DynamoDB Streams) | Phase 2 |
-| **M8** | Production Hardening & Load Testing | Phase 1 & 2 |
+| **M7** | Production Hardening & Load Testing | Phase 1 & 2 |
+| **M8** | Phase 2 Migration (DynamoDB Streams) | Phase 2 |
 
 ---
 
@@ -157,7 +157,7 @@ Implement the Order Lambda, API Gateway, DynamoDB Orders table, SNS fan-out, and
   - `/order-service/{env}/order-events-topic-arn`
   - `/order-service/{env}/order-events-bus-name`
   - `/order-service/{env}/orders-table-name`
-  - `/order-service/{env}/orders-table-stream-arn` (for Phase 2 ESM in US-7.1)
+  - `/order-service/{env}/orders-table-stream-arn` (for Phase 2 ESM in US-8.1)
 - [x] Apply `TaggingAspect` with `service=order-service`
 - [x] Write `docs/adr/ADR-003-order-service-infrastructure.md`
 
@@ -672,100 +672,24 @@ Deploy all stacks to both `ap-south-1` and `us-east-1` with DynamoDB Global Tabl
 
 ---
 
-## Milestone 7 — Phase 2: DynamoDB Streams Migration
-
-### Goals
-Add DynamoDB Streams triggers for Notification and Inventory Lambdas, implement ESM filter for local-write-only processing, and implement `MESSAGING_MODE` feature flag migration.
-
----
-
-### US-7.1 — CDK: DynamoDB Streams Event Source Mappings
-**Story Points:** 5 | **Status:** [ ]
-
-**Tasks:**
-- [ ] Add DynamoDB Streams ESM to Notification Lambda in `NotificationServiceStack`:
-  - Stream: Orders table stream ARN
-  - Starting position: `LATEST`
-  - Batch size: 100
-  - Bisect on error: true
-  - DLQ: `notification-dlq`
-  - ESM filter (local writes only):
-    ```json
-    { "Filters": [{ "Pattern": "{\"dynamodb\":{\"NewImage\":{\"aws:rep:updateregion\":{\"S\":[{\"exists\":false}]}}}}" }] }
-    ```
-- [ ] Add DynamoDB Streams ESM to Inventory Lambda in `InventoryServiceStack` (same filter)
-- [ ] Keep SQS event source mappings in place (disabled but not removed until `MESSAGING_MODE=STREAMS` is stable)
-- [ ] Lambda IAM additions:
-  - Notification Lambda: `dynamodb:GetRecords`, `dynamodb:GetShardIterator`, `dynamodb:DescribeStream`, `dynamodb:ListStreams` on Orders table stream
-  - Inventory Lambda: same
-
-**Acceptance Criteria:**
-- ESM filter confirmed: replicated writes (with `aws:rep:updateregion`) do NOT trigger Lambda
-- Local writes DO trigger Lambda
-- `cdk diff` shows only ESM additions, no other changes
-
----
-
-### US-7.2 — Notification Lambda: DynamoDB Streams Handler
-**Story Points:** 5 | **Status:** [ ]
-
-**Tasks:**
-- [ ] Update `src/notification-service/handler.ts` to handle both `SQSEvent` and `DynamoDBStreamEvent`
-- [ ] For `DynamoDBStreamEvent`:
-  - Parse `DynamoDBRecord.dynamodb.NewImage` using `@aws-sdk/util-dynamodb` `unmarshall`
-  - Apply application-level filter: explicitly skip and return success if `process.env.MESSAGING_MODE === 'SNS'` to prevent duplicate emails during migration
-  - Apply application-level filter: skip if `aws:rep:updateregion` present (belt-and-suspenders)
-  - Extract `correlationId` from item; inject into Powertools logger
-  - Execute same email send + DynamoDB Notifications PutItem as Phase 1
-  - Report `batchItemFailures` with `itemIdentifier = record.dynamodb.SequenceNumber`
-- [ ] Idempotency: check Notifications GSI-1 (`orderId`) for existing `SENT` confirmation before sending email
-
-**Acceptance Criteria:**
-- Phase 1 path (SQS) still works with `MESSAGING_MODE=SNS`
-- Phase 2 path (Streams) works with `MESSAGING_MODE=STREAMS` — set on Lambda env var, not affecting DDB Streams trigger (streams are always on)
-- Replicated stream records filtered at both ESM and application level
-- Duplicate stream records (same `SequenceNumber`) handled idempotently
-
----
-
-### US-7.3 — Phase Migration Execution
-**Story Points:** 2 | **Status:** [ ]
-
-**Tasks:**
-- [ ] Document runbook in `docs/runbooks/phase2-migration.md`:
-  1. Deploy Phase 2 infrastructure (US-7.1)
-  2. Monitor DLQ and Lambda errors for 15 minutes
-  3. Flip `MESSAGING_MODE=STREAMS` in `us-east-1` via SSM parameter update + Lambda env redeploy
-  4. Monitor CloudWatch for 30 minutes (duplicate/missing notifications)
-  5. If stable, flip `MESSAGING_MODE=STREAMS` in `ap-south-1`
-  6. Decommission Phase 1 SNS + SQS resources (`cdk destroy` respective constructs)
-- [ ] Rollback script: set `MESSAGING_MODE=SNS` via Lambda update-function-configuration (no redeployment)
-
-**Acceptance Criteria:**
-- Runbook reviewed and approved by team
-- Rollback script tested in `dev` (flipping back to SNS from STREAMS)
-- No duplicate or missing notifications during migration window in `dev`
-
----
-
-## Milestone 8 — Production Hardening & Load Testing
+## Milestone 7 — Production Hardening & Load Testing
 
 ### Goals
 Validate the system against target TPS, ensure all operational excellence requirements are met, and establish production readiness checklist.
 
 ---
 
-### US-8.1 — Load & Performance Testing (Phase 1 — 10K TPS)
-**Story Points:** 5 | **Status:** [ ]
+### US-7.1 — Load & Performance Testing (Phase 1 — 10K TPS)
+**Story Points:** 5 | **Status:** [x] Complete
 
 **Tasks:**
-- [ ] Set up `artillery` or `k6` load test scripts in `tests/load/`
-- [ ] Ramp test: 0 → 10,000 RPS over 5 minutes, sustain for 10 minutes
-- [ ] Assert: p99 API Gateway latency < 1000ms, error rate < 0.1% during sustained load
-- [ ] Assert: DLQ depth = 0 after load test
-- [ ] Measure: DynamoDB throttles (expect 0 on On-Demand)
-- [ ] Measure: Lambda concurrent executions vs reserved concurrency limits
-- [ ] Capture results in `docs/load-test-results/phase1-10k-tps.md`
+- [x] Set up `artillery` or `k6` load test scripts in `tests/load/`
+- [x] Ramp test: 0 → 10,000 RPS over 5 minutes, sustain for 10 minutes
+- [x] Assert: p99 API Gateway latency < 1000ms, error rate < 0.1% during sustained load
+- [x] Assert: DLQ depth = 0 after load test
+- [x] Measure: DynamoDB throttles (expect 0 on On-Demand)
+- [x] Measure: Lambda concurrent executions vs reserved concurrency limits
+- [x] Capture results in `docs/load-test-results/phase1-10k-tps.md`
 
 **Acceptance Criteria:**
 - System sustains 10K TPS with p99 < 1s and error rate < 0.1%
@@ -774,7 +698,7 @@ Validate the system against target TPS, ensure all operational excellence requir
 
 ---
 
-### US-8.2 — Security Hardening
+### US-7.2 — Security Hardening
 **Story Points:** 3 | **Status:** [ ]
 
 **Tasks:**
@@ -793,29 +717,29 @@ Validate the system against target TPS, ensure all operational excellence requir
 
 ---
 
-### US-8.3 — Production Readiness Review
+### US-7.3 — Production Readiness Review
 **Story Points:** 2 | **Status:** [ ]
 
 **Tasks:**
 - [ ] Complete production readiness checklist:
   - [ ] All CloudWatch alarms defined and tested
   - [ ] DLQ monitoring and on-call runbook exists
-  - [ ] Phase 2 migration runbook approved
   - [ ] Load test results show system meets Phase 1 targets
   - [ ] All ADRs written and reviewed
   - [ ] Every service `README.md` complete
   - [ ] Contract tests passing in CI
   - [ ] AWS service limit increase requests submitted for Phase 2 (API GW 100K RPS, Lambda 20K concurrency, DynamoDB 100K WCU)
+  - [ ] Phase 2 migration runbook approved *(deferred to M8 — US-8.3)*
 - [ ] Create `docs/runbooks/dlq-remediation.md`
 - [ ] Create `docs/runbooks/region-failover-test.md`
 
 **Acceptance Criteria:**
-- All checklist items completed and verified
+- All checklist items completed and verified (except deferred items)
 - AWS Support tickets for Phase 2 limit increases open with ticket numbers documented
 
 ---
 
-### US-8.4 — Retry & Circuit Breaker Patterns for All Services
+### US-7.4 — Retry & Circuit Breaker Patterns for All Services
 **Story Points:** 8 | **Status:** [ ]
 
 **Description:** As a platform engineer, I want every service to use a consistent retry strategy (exponential backoff with jitter) and a circuit breaker pattern for all downstream calls so that transient failures are handled gracefully and cascading failures are prevented.
@@ -880,6 +804,82 @@ Validate the system against target TPS, ensure all operational excellence requir
 
 ---
 
+## Milestone 8 — Phase 2: DynamoDB Streams Migration
+
+### Goals
+Add DynamoDB Streams triggers for Notification and Inventory Lambdas, implement ESM filter for local-write-only processing, and implement `MESSAGING_MODE` feature flag migration.
+
+---
+
+### US-8.1 — CDK: DynamoDB Streams Event Source Mappings
+**Story Points:** 5 | **Status:** [ ]
+
+**Tasks:**
+- [ ] Add DynamoDB Streams ESM to Notification Lambda in `NotificationServiceStack`:
+  - Stream: Orders table stream ARN
+  - Starting position: `LATEST`
+  - Batch size: 100
+  - Bisect on error: true
+  - DLQ: `notification-dlq`
+  - ESM filter (local writes only):
+    ```json
+    { "Filters": [{ "Pattern": "{\"dynamodb\":{\"NewImage\":{\"aws:rep:updateregion\":{\"S\":[{\"exists\":false}]}}}}" }] }
+    ```
+- [ ] Add DynamoDB Streams ESM to Inventory Lambda in `InventoryServiceStack` (same filter)
+- [ ] Keep SQS event source mappings in place (disabled but not removed until `MESSAGING_MODE=STREAMS` is stable)
+- [ ] Lambda IAM additions:
+  - Notification Lambda: `dynamodb:GetRecords`, `dynamodb:GetShardIterator`, `dynamodb:DescribeStream`, `dynamodb:ListStreams` on Orders table stream
+  - Inventory Lambda: same
+
+**Acceptance Criteria:**
+- ESM filter confirmed: replicated writes (with `aws:rep:updateregion`) do NOT trigger Lambda
+- Local writes DO trigger Lambda
+- `cdk diff` shows only ESM additions, no other changes
+
+---
+
+### US-8.2 — Notification Lambda: DynamoDB Streams Handler
+**Story Points:** 5 | **Status:** [ ]
+
+**Tasks:**
+- [ ] Update `src/notification-service/handler.ts` to handle both `SQSEvent` and `DynamoDBStreamEvent`
+- [ ] For `DynamoDBStreamEvent`:
+  - Parse `DynamoDBRecord.dynamodb.NewImage` using `@aws-sdk/util-dynamodb` `unmarshall`
+  - Apply application-level filter: explicitly skip and return success if `process.env.MESSAGING_MODE === 'SNS'` to prevent duplicate emails during migration
+  - Apply application-level filter: skip if `aws:rep:updateregion` present (belt-and-suspenders)
+  - Extract `correlationId` from item; inject into Powertools logger
+  - Execute same email send + DynamoDB Notifications PutItem as Phase 1
+  - Report `batchItemFailures` with `itemIdentifier = record.dynamodb.SequenceNumber`
+- [ ] Idempotency: check Notifications GSI-1 (`orderId`) for existing `SENT` confirmation before sending email
+
+**Acceptance Criteria:**
+- Phase 1 path (SQS) still works with `MESSAGING_MODE=SNS`
+- Phase 2 path (Streams) works with `MESSAGING_MODE=STREAMS` — set on Lambda env var, not affecting DDB Streams trigger (streams are always on)
+- Replicated stream records filtered at both ESM and application level
+- Duplicate stream records (same `SequenceNumber`) handled idempotently
+
+---
+
+### US-8.3 — Phase Migration Execution
+**Story Points:** 2 | **Status:** [ ]
+
+**Tasks:**
+- [ ] Document runbook in `docs/runbooks/phase2-migration.md`:
+  1. Deploy Phase 2 infrastructure (US-8.1)
+  2. Monitor DLQ and Lambda errors for 15 minutes
+  3. Flip `MESSAGING_MODE=STREAMS` in `us-east-1` via SSM parameter update + Lambda env redeploy
+  4. Monitor CloudWatch for 30 minutes (duplicate/missing notifications)
+  5. If stable, flip `MESSAGING_MODE=STREAMS` in `ap-south-1`
+  6. Decommission Phase 1 SNS + SQS resources (`cdk destroy` respective constructs)
+- [ ] Rollback script: set `MESSAGING_MODE=SNS` via Lambda update-function-configuration (no redeployment)
+
+**Acceptance Criteria:**
+- Runbook reviewed and approved by team
+- Rollback script tested in `dev` (flipping back to SNS from STREAMS)
+- No duplicate or missing notifications during migration window in `dev`
+
+---
+
 ## Story Point Summary
 
 | Milestone | Points | Priority |
@@ -891,8 +891,8 @@ Validate the system against target TPS, ensure all operational excellence requir
 | M4 — Helpdesk Service | 8 | 🟠 High |
 | M5 — Observability Stack | 5 | 🟠 High |
 | M6 — Multi-Region Deployment | 11 | 🟡 Medium |
-| M7 — Phase 2 Migration | 12 | 🟡 Medium |
-| M8 — Production Hardening | 18 | 🟡 Medium |
+| M7 — Production Hardening | 18 | 🟡 Medium |
+| M8 — Phase 2 Migration | 12 | 🟡 Medium |
 | **Total** | **108** | |
 
 ---
@@ -905,5 +905,5 @@ Validate the system against target TPS, ensure all operational excellence requir
 | Sprint 2 | M1 (US-1.3–1.6), M2 (US-2.1, US-2.2) | Order tests/CI/docs + Notification core |
 | Sprint 3 | M2 (US-2.3–2.6), M3, M4 | Notification & Inventory & Helpdesk |
 | Sprint 4 | M5, M6 | Observability + Multi-region |
-| Sprint 5 | M7 | Phase 2 DynamoDB Streams migration |
-| Sprint 6 | M8 | Production hardening & load testing |
+| Sprint 5 | M7 | Production hardening & load testing |
+| Sprint 6 | M8 | Phase 2 DynamoDB Streams migration |

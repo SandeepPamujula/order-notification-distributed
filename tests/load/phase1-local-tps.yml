@@ -1,0 +1,28 @@
+config:
+  target: "https://api.spworks.click"
+  phases:
+    - duration: 30
+      arrivalRate: 10
+      rampTo: 100
+      name: "Ramp up local test"
+    - duration: 60
+      arrivalRate: 100
+      name: "Sustain 100 TPS"
+scenarios:
+  - name: "Place Order"
+    flow:
+      - post:
+          url: "/orders"
+          json:
+            userId: "user-{{ $randomString() }}"
+            userEmail: "loadtest-{{ $randomString() }}@example.com"
+            country: "US"
+            currency: "USD"
+            totalAmount: 150
+            items:
+              - productId: "prod-{{ $randomString() }}"
+                productName: "Load Test Product"
+                quantity: 1
+                unitPrice: 150
+          expect:
+            - statusCode: 201
