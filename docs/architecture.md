@@ -1,4 +1,5 @@
 # Order Notification Distributed System — Architecture
+( Deployed at: https://api.spworks.click/health )
 
 ## 1. Overview
 
@@ -366,18 +367,18 @@ sequenceDiagram
 ```mermaid
 erDiagram
     ORDERS {
-        string orderId PK "Partition Key (UUID v4)"
-        string createdAt SK "Sort Key (ISO 8601)"
+        string orderId PK "Partition Key - UUID v4"
+        string createdAt "Sort Key - ISO 8601"
         string userId "User identifier"
         string userEmail "User email address"
-        string country "Shipping destination country code (ISO 3166-1 alpha-2)"
-        string status "Order status: PLACED | CONFIRMED | FAILED"
-        string currency "ISO 4217 currency code (e.g. INR, USD)"
+        string country "ISO 3166-1 alpha-2 country code"
+        string status "PLACED or CONFIRMED or FAILED"
+        string currency "ISO 4217 currency code"
         number totalAmount "Order total amount"
-        string items "Array of order items (JSON-serialized)"
+        string items "DynamoDB List of Maps - order line items"
         string region "AWS region where order was placed"
-        string updatedAt "Last updated timestamp (ISO 8601)"
-        number ttl "TTL epoch timestamp (optional)"
+        string updatedAt "Last updated timestamp - ISO 8601"
+        number ttl "TTL epoch timestamp - optional"
     }
 
     ORDER_ITEMS {
@@ -387,7 +388,7 @@ erDiagram
         number unitPrice "Price per unit"
     }
 
-    ORDERS ||--|{ ORDER_ITEMS : "contains"
+    ORDERS ||--|{ ORDER_ITEMS : "contains nested"
 ```
 
 **DynamoDB Table Design:**
@@ -414,20 +415,20 @@ erDiagram
 ```mermaid
 erDiagram
     NOTIFICATIONS {
-        string notificationId PK "Partition Key (UUID v4)"
-        string createdAt SK "Sort Key (ISO 8601)"
+        string notificationId PK "Partition Key - UUID v4"
+        string createdAt "Sort Key - ISO 8601"
         string orderId "Reference to order"
         string userId "User identifier"
         string userEmail "Recipient email"
-        string type "CONFIRMATION | HELPDESK"
-        string status "SENT | FAILED | PENDING"
+        string type "CONFIRMATION"
+        string status "SENT or FAILED"
         string channel "EMAIL"
         string subject "Email subject line"
         string body "Email body content"
-        string errorMessage "Error message if failed (optional)"
+        string errorMessage "Error message if failed - optional"
         number retryCount "Number of retry attempts"
-        string sentAt "Timestamp email was sent (ISO 8601)"
-        number ttl "TTL epoch timestamp (optional)"
+        string sentAt "Timestamp email was sent - ISO 8601"
+        number ttl "TTL epoch timestamp - optional"
     }
 ```
 
