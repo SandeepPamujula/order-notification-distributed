@@ -67,12 +67,12 @@ export class ObservabilityStack extends cdk.Stack {
         // 4. Dashboards
         // -----------------------------------------------------------------------
 
-        // 4a. Order Service Dashboard
-        const orderDashboard = new cloudwatch.Dashboard(this, 'OrderDashboard', {
-            dashboardName: `order-service-${this.region}-${envName}`,
+        // 4. Unified System Health Dashboard (Free Tier limit: 3/mo)
+        const systemDashboard = new cloudwatch.Dashboard(this, 'SystemHealthDashboard', {
+            dashboardName: `system-health-${this.region}-${envName}`,
         });
 
-                orderDashboard.addWidgets(
+        systemDashboard.addWidgets(
             new cloudwatch.GraphWidget({
                 title: 'API GW Latency (p50/p99)',
                 left: [
@@ -93,11 +93,7 @@ export class ObservabilityStack extends cdk.Stack {
         );
 
         // 4b. Notification Service Dashboard
-        const notificationDashboard = new cloudwatch.Dashboard(this, 'NotificationDashboard', {
-            dashboardName: `notification-service-${this.region}-${envName}`,
-        });
-
-                notificationDashboard.addWidgets(
+        systemDashboard.addWidgets(
             new cloudwatch.GraphWidget({
                 title: 'SQS Queue / DLQ Depth',
                 left: [new cloudwatch.Metric({ namespace: 'AWS/SQS', metricName: 'ApproximateNumberOfMessagesVisible', dimensionsMap: { QueueName: notificationQueueName }, statistic: 'Maximum', period: cdk.Duration.minutes(1) }) as any],
@@ -118,11 +114,7 @@ export class ObservabilityStack extends cdk.Stack {
         );
 
         // 4c. Inventory Service Dashboard
-        const inventoryDashboard = new cloudwatch.Dashboard(this, 'InventoryDashboard', {
-            dashboardName: `inventory-service-${this.region}-${envName}`,
-        }) as any;
-
-                inventoryDashboard.addWidgets(
+        systemDashboard.addWidgets(
             new cloudwatch.GraphWidget({
                 title: 'SQS Queue / DLQ Depth',
                 left: [new cloudwatch.Metric({ namespace: 'AWS/SQS', metricName: 'ApproximateNumberOfMessagesVisible', dimensionsMap: { QueueName: inventoryQueueName }, statistic: 'Maximum', period: cdk.Duration.minutes(1) }) as any],
@@ -135,9 +127,7 @@ export class ObservabilityStack extends cdk.Stack {
         );
 
         // 4d. System Health Dashboard
-        const systemDashboard = new cloudwatch.Dashboard(this, 'SystemHealthDashboard', {
-            dashboardName: `system-health-${this.region}-${envName}`,
-        });
+        
 
         // Try getting primary health check ID from us-east-1 (SharedStack)
         const getPrimaryHealthCheckId = new cr.AwsCustomResource(this, 'GetPrimaryHealthCheckId', {
